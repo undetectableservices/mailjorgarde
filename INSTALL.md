@@ -59,7 +59,11 @@ and firewalled. A short DDNS TTL reduces interruption after an address change;
 remote servers normally retry temporary failures.
 
 DDNS cannot solve CGNAT or an ISP-level TCP 25 block. Test the port from a truly
-external network before relying on it.
+external network before relying on it. Connecting to the DDNS hostname from the
+mail server or another device on the same internet connection only tests the
+router's optional NAT-loopback (hairpin) behavior and can fail even when real
+internet delivery works. Use cellular with Wi-Fi/VPN disabled, a VPS, or an
+external TCP probe, then confirm with a message from an unrelated mail provider.
 
 ## Install
 
@@ -78,7 +82,9 @@ The first run:
 
 1. Verifies Docker, Compose, OpenSSL, systemd, and required host tools.
 2. Creates `/etc/mailjorgarde/mailjorgarde.env` as `root:root` mode `0600`.
-3. Prompts for the explicit LAN bind address and stable MX/DDNS hostname.
+3. Prompts for the explicit LAN bind address, stable MX/DDNS hostname, and a
+   Jellyfin URL/API key used to gate self-registration. For Jellyfin on the
+   Docker host, use `http://LAN_BIND_ADDRESS:8096`, not `localhost`.
 4. Generates database, JWT, API, webhook, and SMTP TLS credentials locally.
 5. Validates Compose, builds images, applies database migrations, and waits for
    database/auth/API/web/SMTP readiness.
@@ -87,13 +93,24 @@ The first run:
    or placed in command arguments.
 7. Enables `mailjorgarde.service` and a daily backup timer immediately.
 
-For a noninteractive first install, provide `ADMIN_USERNAME` and
-`ADMIN_PASSWORD` only in the invoking process environment. If the password is
-omitted, a strong one is generated and displayed once. Do not put it in the
-server environment file.
+For a noninteractive first install, provide `ADMIN_USERNAME`, `ADMIN_PASSWORD`,
+`JELLYFIN_URL`, and `JELLYFIN_API_KEY` only in the invoking process environment.
+If the administrator password is omitted, a strong one is generated and
+displayed once. Do not put the administrator password in the server environment
+file; the installer does persist the Jellyfin settings in its protected config.
 
-Additional users are created by an administrator from the Users section. Open
-account creation is disabled at the authentication service.
+Public GoTrue account creation remains disabled. A user can instead select
+**Register**, enter their exact Jellyfin username and Jellyfin password, and
+choose a separate JorgardeMail password. The server privately checks the
+Jellyfin user list and credentials before provisioning the account. The
+Jellyfin API key, user list, and submitted Jellyfin password are never sent
+back to the browser or stored by JorgardeMail. Attempts are rate-limited and
+return the same generic failure for unknown names and wrong passwords.
+
+Create the API key in **Jellyfin Dashboard → Advanced → API Keys**. It is saved
+only in `/etc/mailjorgarde/mailjorgarde.env`, which is root-owned mode `0600`.
+Re-running `sudo ./run.sh --rebuild` prompts for these Jellyfin settings when
+an upgraded installation does not have them yet.
 
 ## Deployment modes
 
@@ -173,8 +190,8 @@ merely to solve SMTP certificate issuance.
 ## First application setup
 
 1. Open the URL printed by the installer and sign in with the provisioned admin.
-2. Create the friend's account in Admin → Users and share its one-time password
-   through a separate secure channel.
+2. Have the friend choose **Register** and verify their existing Jellyfin
+   account. Admin → Users remains available for manually managed accounts.
 3. Add both recipient domains in Admin → Domains.
 4. Create at least one mailbox for each intended address.
 5. Publish each domain's MX record to `MAIL_HOSTNAME`.

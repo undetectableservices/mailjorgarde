@@ -22,6 +22,7 @@ import { Route as AuthenticatedDmIdRouteImport } from './routes/_authenticated.d
 import { Route as AuthenticatedMIdRouteImport } from './routes/_authenticated.m.$id'
 import { Route as AuthenticatedMsgIdRouteImport } from './routes/_authenticated.msg.$id'
 import { Route as ApiPublicInboundRouteImport } from './routes/api/public/inbound'
+import { Route as ApiPublicRegisterRouteImport } from './routes/api/public/register'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -87,6 +88,11 @@ const ApiPublicInboundRoute = ApiPublicInboundRouteImport.update({
   path: '/api/public/inbound',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicRegisterRoute = ApiPublicRegisterRouteImport.update({
+  id: '/api/public/register',
+  path: '/api/public/register',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -101,6 +107,7 @@ export interface FileRoutesByFullPath {
   '/m/$id': typeof AuthenticatedMIdRoute
   '/msg/$id': typeof AuthenticatedMsgIdRoute
   '/api/public/inbound': typeof ApiPublicInboundRoute
+  '/api/public/register': typeof ApiPublicRegisterRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -115,6 +122,7 @@ export interface FileRoutesByTo {
   '/m/$id': typeof AuthenticatedMIdRoute
   '/msg/$id': typeof AuthenticatedMsgIdRoute
   '/api/public/inbound': typeof ApiPublicInboundRoute
+  '/api/public/register': typeof ApiPublicRegisterRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -131,6 +139,7 @@ export interface FileRoutesById {
   '/_authenticated/m/$id': typeof AuthenticatedMIdRoute
   '/_authenticated/msg/$id': typeof AuthenticatedMsgIdRoute
   '/api/public/inbound': typeof ApiPublicInboundRoute
+  '/api/public/register': typeof ApiPublicRegisterRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -147,6 +156,7 @@ export interface FileRouteTypes {
     | '/m/$id'
     | '/msg/$id'
     | '/api/public/inbound'
+    | '/api/public/register'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -161,6 +171,7 @@ export interface FileRouteTypes {
     | '/m/$id'
     | '/msg/$id'
     | '/api/public/inbound'
+    | '/api/public/register'
   id:
     | '__root__'
     | '/'
@@ -176,6 +187,7 @@ export interface FileRouteTypes {
     | '/_authenticated/m/$id'
     | '/_authenticated/msg/$id'
     | '/api/public/inbound'
+    | '/api/public/register'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -184,6 +196,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ApiHealthzRoute: typeof ApiHealthzRoute
   ApiPublicInboundRoute: typeof ApiPublicInboundRoute
+  ApiPublicRegisterRoute: typeof ApiPublicRegisterRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -279,6 +292,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicInboundRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/register': {
+      id: '/api/public/register'
+      path: '/api/public/register'
+      fullPath: '/api/public/register'
+      preLoaderRoute: typeof ApiPublicRegisterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -324,6 +344,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   ApiHealthzRoute: ApiHealthzRoute,
   ApiPublicInboundRoute: ApiPublicInboundRoute,
+  ApiPublicRegisterRoute: ApiPublicRegisterRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

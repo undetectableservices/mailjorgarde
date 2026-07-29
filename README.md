@@ -10,6 +10,7 @@ The production default is intentionally hybrid:
 - web UI, authentication, API, and direct messages share one LAN-bound origin;
 - internet email enters through TCP 25;
 - application data and credentials stay on the host;
+- friend registration is gated by an exact, password-verified Jellyfin account;
 - systemd and Docker restart the service after reboot or container failure.
 
 A dynamic public IP can work with a correctly maintained DDNS A record and MX

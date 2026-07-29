@@ -9,8 +9,8 @@ import { copyText } from "@/lib/copy-text";
 import {
   checkBackend,
   checkDns,
-  checkPort,
   checkServerEnv,
+  checkSmtpListener,
   sendTestDelivery,
 } from "@/lib/setup-tests.functions";
 
@@ -75,8 +75,8 @@ function Pill({ state, label }: { state: PillState; label?: string }) {
 const PORTS = [
   {
     port: 25,
-    label: "Internet SMTP receiver (TCP 25)",
-    why: "Other mail servers deliver inbound mail here. This is the only public mail port this receive-only service needs.",
+    label: "Local SMTP receiver (published as TCP 25)",
+    why: "Checks the real SMTP service and greeting inside this stack. Router, CGNAT, and ISP reachability require a separate test from outside your network.",
     banner: true,
   },
 ];
@@ -90,7 +90,7 @@ export function SetupWizard() {
   const [testAddr, setTestAddr] = useState("");
 
   const runEnv = useServerFn(checkServerEnv);
-  const runPort = useServerFn(checkPort);
+  const runPort = useServerFn(checkSmtpListener);
   const runDns = useServerFn(checkDns);
   const runDelivery = useServerFn(sendTestDelivery);
   const runBackend = useServerFn(checkBackend);
@@ -141,7 +141,6 @@ export function SetupWizard() {
   });
 
   const testPort = async (port: number, banner: boolean) => {
-    if (!mailHostname) return toast.error("Configure MAIL_HOSTNAME first");
     setPortResults((r) => ({ ...r, [port]: { loading: true } }));
     try {
       const res = await runPort({ data: { banner } });
@@ -304,6 +303,8 @@ export function SetupWizard() {
               ["Backend public key", env?.env.SUPABASE_PUBLISHABLE_KEY],
               ["Backend service key", env?.env.SUPABASE_SERVICE_ROLE_KEY],
               ["Inbound webhook secret", env?.env.INBOUND_WEBHOOK_SECRET],
+              ["Jellyfin URL", env?.env.JELLYFIN_URL],
+              ["Jellyfin API key", env?.env.JELLYFIN_API_KEY],
             ].map(([label, ok]) => (
               <div
                 key={label as string}
@@ -392,16 +393,22 @@ export function SetupWizard() {
             </li>
           </ol>
           <div className="text-xs text-muted-foreground">
-            DDNS cannot bypass CGNAT or an ISP block on port 25. A test from this server can also be
-            fooled by NAT loopback; the final proof is delivery from an outside mail provider.
+            DDNS cannot bypass CGNAT or an ISP block on port 25. This page can prove the local SMTP
+            listener is healthy, but it deliberately does not call your public DDNS address from
+            inside the same network: that is only a router NAT-loopback test. Verify public TCP 25
+            from cellular, a VPS, or another genuinely external network, then send a real message.
           </div>
 
           <div className="flex gap-2 items-center">
             <code className="min-w-0 flex-1 truncate rounded border border-border bg-card px-3 py-2 text-sm text-gold">
               {mailHostname || "MAIL_HOSTNAME is not configured"}
             </code>
-            <Button onClick={testAllPorts} className="bg-gold text-background whitespace-nowrap">
-              Test TCP 25
+            <Button
+              onClick={testAllPorts}
+              disabled={portResults[25]?.loading}
+              className="bg-gold text-background whitespace-nowrap"
+            >
+              Test local receiver
             </Button>
           </div>
 
@@ -423,10 +430,19 @@ export function SetupWizard() {
                   <Pill
                     state={state}
                     label={
-                      state === "ok" ? "Reachable" : state === "fail" ? "Unreachable" : undefined
+                      state === "ok"
+                        ? "Listener ready"
+                        : state === "fail"
+                          ? "Local check failed"
+                          : undefined
                     }
                   />
-                  <Button size="sm" variant="outline" onClick={() => testPort(p.port, p.banner)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={r?.loading}
+                    onClick={() => testPort(p.port, p.banner)}
+                  >
                     Test
                   </Button>
                 </div>

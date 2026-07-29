@@ -311,7 +311,7 @@ require_complete_config() {
   for key in POSTGRES_PASSWORD AUTHENTICATOR_PASSWORD AUTH_ADMIN_PASSWORD JWT_SECRET \
              ANON_KEY SERVICE_ROLE_KEY INBOUND_WEBHOOK_SECRET INSTALL_MODE \
              LAN_BIND_ADDRESS WEB_HOSTNAME MAIL_HOSTNAME SMTP_BIND_ADDRESS \
-             SUPABASE_PUBLIC_URL SITE_URL SMTP_TLS_DIR; do
+             SUPABASE_PUBLIC_URL SITE_URL SMTP_TLS_DIR JELLYFIN_URL JELLYFIN_API_KEY; do
     value="$(get_var "$key")"
     [[ -n "$value" ]] || missing+=("$key")
   done
@@ -412,6 +412,8 @@ down_all() {
     INBOUND_WEBHOOK_SECRET="${INBOUND_WEBHOOK_SECRET:-removal-placeholder-secret-32-bytes}" \
     SUPABASE_PUBLIC_URL="${SUPABASE_PUBLIC_URL:-http://127.0.0.1:6969}" \
     SITE_URL="${SITE_URL:-http://127.0.0.1:6969}" \
+    JELLYFIN_URL="${JELLYFIN_URL:-http://127.0.0.1:8096}" \
+    JELLYFIN_API_KEY="${JELLYFIN_API_KEY:-removal-placeholder-api-key}" \
     INSTALL_MODE="${INSTALL_MODE:-hybrid}" LAN_BIND_ADDRESS="${LAN_BIND_ADDRESS:-127.0.0.1}" \
     WEB_HOSTNAME="${WEB_HOSTNAME:-127.0.0.1}" MAIL_HOSTNAME="${MAIL_HOSTNAME:-mail.invalid}" \
     SMTP_BIND_ADDRESS="${SMTP_BIND_ADDRESS:-127.0.0.1}" \
@@ -479,6 +481,39 @@ prompt_value() {
     die "${key} is required. Set it in ${ENV_FILE} or rerun interactively."
   fi
   set_var "$key" "$value"
+}
+
+prompt_secret_value() {
+  local key="$1" description="$2" required="${3:-0}" value
+  value="$(get_var "$key")"
+  case "$value" in
+    ""|TODO|change-me*) value="" ;;
+  esac
+  if [[ -z "$value" && -v "$key" ]]; then value="${!key}"; fi
+  if [[ -z "$value" && $NONINTERACTIVE -eq 0 && -t 0 ]]; then
+    read -r -s -p "  ${description}: " value || true
+    printf '\n' >&2
+  fi
+  if [[ -z "$value" && "$required" == "1" ]]; then
+    die "${key} is required. Set it in ${ENV_FILE} or rerun interactively."
+  fi
+  set_var "$key" "$value"
+}
+
+validate_jellyfin_url() {
+  local value="$1" remainder authority lower_authority
+  case "$value" in
+    http://*|https://*) ;;
+    *) return 1 ;;
+  esac
+  [[ "$value" != *[[:space:]]* && "$value" != *\?* && "$value" != *\#* ]] || return 1
+  remainder="${value#*://}"
+  authority="${remainder%%/*}"
+  [[ -n "$authority" && "$authority" != *@* ]] || return 1
+  lower_authority="$(printf '%s' "$authority" | tr '[:upper:]' '[:lower:]')"
+  case "$lower_authority" in
+    localhost|localhost:*|127.*|0.0.0.0|0.0.0.0:*|'[::1]'|'[::1]':*) return 1 ;;
+  esac
 }
 
 rand_pw() { openssl rand -hex 24; }
@@ -577,6 +612,21 @@ configure_install() {
     acme="$(get_var ACME_EMAIL)"
     [[ "$acme" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || die "ACME_EMAIL is not valid."
   fi
+
+  local jellyfin_url jellyfin_key
+  prompt_value JELLYFIN_URL \
+    "Jellyfin URL reachable from Docker (not localhost)" \
+    "${JELLYFIN_URL:-http://${lan}:8096}" 1
+  prompt_secret_value JELLYFIN_API_KEY "Jellyfin API key (input hidden)" 1
+  jellyfin_url="$(get_var JELLYFIN_URL)"
+  jellyfin_url="${jellyfin_url%/}"
+  validate_jellyfin_url "$jellyfin_url" \
+    || die "JELLYFIN_URL must be an HTTP(S) URL reachable from Docker; use http://${lan}:8096 for Jellyfin on this host, not localhost."
+  set_var JELLYFIN_URL "$jellyfin_url"
+  jellyfin_key="$(get_var JELLYFIN_API_KEY)"
+  [[ ${#jellyfin_key} -ge 16 && ${#jellyfin_key} -le 256 \
+     && "$jellyfin_key" =~ ^[A-Za-z0-9._~-]+$ ]] \
+    || die "JELLYFIN_API_KEY must be 16-256 URL-safe characters. Create an API key in Jellyfin Dashboard > Advanced > API Keys."
 
   web_port="$(get_var WEB_PORT)"; web_port="${web_port:-6969}"
   https_port="$(get_var HTTPS_LOCAL_PORT)"; https_port="${https_port:-8443}"
@@ -755,7 +805,7 @@ backup_database() {
 
 doctor_stack() {
   require_complete_config
-  local failures=0 lan_bind https_port
+  local failures=0 lan_bind https_port smtp_mapping mail_host mail_addresses mail_ipv4 expected_public_ip
   compose_for_mode
   "${COMPOSE[@]}" ps
   "${COMPOSE[@]}" exec -T db psql -U postgres -d postgres -qtAX -c 'SELECT 1' | grep -qx 1 \
@@ -769,6 +819,13 @@ doctor_stack() {
     || { warn "Web readiness failed"; failures=$((failures + 1)); }
   "${COMPOSE[@]}" exec -T smtp wget -qO- http://127.0.0.1:8080/readyz >/dev/null \
     || { warn "SMTP readiness failed"; failures=$((failures + 1)); }
+  smtp_mapping="$("${COMPOSE[@]}" port smtp 2525 2>/dev/null || true)"
+  if [[ "$smtp_mapping" == *:25 ]]; then
+    ok "SMTP listener is published locally at ${smtp_mapping}"
+  else
+    warn "SMTP container is ready, but Docker does not report a host TCP 25 mapping"
+    failures=$((failures + 1))
+  fi
   if [[ "$MODE" == "public-web" ]]; then
     "${COMPOSE[@]}" exec -T caddy caddy validate --config /etc/caddy/Caddyfile >/dev/null \
       || { warn "Public Caddy configuration failed validation"; failures=$((failures + 1)); }
@@ -783,11 +840,24 @@ doctor_stack() {
         || { warn "LAN HTTPS handshake failed"; failures=$((failures + 1)); }
     fi
   fi
+  mail_host="$(get_var MAIL_HOSTNAME)"
   if have getent; then
-    local mail_host
-    mail_host="$(get_var MAIL_HOSTNAME)"
-    getent ahostsv4 "$mail_host" >/dev/null 2>&1 \
-      || warn "MAIL_HOSTNAME (${mail_host}) does not currently resolve to IPv4; update DDNS before expecting internet delivery."
+    mail_addresses="$(getent ahostsv4 "$mail_host" 2>/dev/null \
+      | awk '!seen[$1]++ { print $1 }' || true)"
+    mail_ipv4="${mail_addresses%%$'\n'*}"
+    if [[ -n "$mail_ipv4" ]]; then
+      ok "DDNS ${mail_host} resolves to IPv4 ${mail_ipv4}"
+      expected_public_ip="$(get_var PUBLIC_IP)"
+      if [[ -n "$expected_public_ip" ]] \
+         && ! grep -Fxq "$expected_public_ip" <<<"$mail_addresses"; then
+        warn "DDNS ${mail_host} does not match configured PUBLIC_IP ${expected_public_ip}"
+      fi
+    else
+      warn "MAIL_HOSTNAME (${mail_host}) does not currently resolve to IPv4 through this server's resolver; the SMTP service itself still accepts hostnames."
+    fi
+  fi
+  if [[ "$MODE" != "local" ]]; then
+    log "Public ingress cannot be proven from this host (NAT hairpin may fail). Test ${mail_host}:25 from a genuinely external network."
   fi
   [[ $failures -eq 0 ]]
 }
@@ -875,6 +945,10 @@ if ! "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 240; then
   "${COMPOSE[@]}" logs --tail 100 auth-bootstrap schema-init auth gateway web smtp || true
   die "The stack did not become healthy; systemd was not installed/updated."
 fi
+
+log "Validating the private Jellyfin registration gate"
+"${COMPOSE[@]}" exec -T web node scripts/check-jellyfin.mjs \
+  || die "Jellyfin registration validation failed. Check JELLYFIN_URL/API key and ensure Jellyfin listens on an address reachable from Docker."
 
 json_escape() {
   local value="$1"

@@ -36,12 +36,18 @@ export const checkServerEnv = createServerFn({ method: "POST" })
         SUPABASE_PUBLISHABLE_KEY: has("SUPABASE_PUBLISHABLE_KEY"),
         SUPABASE_SERVICE_ROLE_KEY: has("SUPABASE_SERVICE_ROLE_KEY"),
         INBOUND_WEBHOOK_SECRET: has("INBOUND_WEBHOOK_SECRET"),
+        JELLYFIN_URL: has("JELLYFIN_URL"),
+        JELLYFIN_API_KEY: has("JELLYFIN_API_KEY"),
       },
     };
   });
 
-/** Probe only the configured MX hostname on TCP 25 (prevents an admin-only SSRF primitive). */
-export const checkPort = createServerFn({ method: "POST" })
+/**
+ * Probe the SMTP container directly. A connection to MAIL_HOSTNAME:25 from
+ * inside this stack is a NAT-hairpin test, not proof of public reachability,
+ * and commonly fails on otherwise-correct routers.
+ */
+export const checkSmtpListener = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .validator((d: unknown) =>
     z
@@ -53,10 +59,8 @@ export const checkPort = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertAdmin(context);
-    const host = process.env.MAIL_HOSTNAME?.trim();
-    if (!host) throw new Error("MAIL_HOSTNAME is not configured");
     const { probeTcp } = await import("./setup-tests.server");
-    return probeTcp(host, 25, data.banner ?? false);
+    return probeTcp("smtp", 2525, data.banner ?? false);
   });
 
 /** DNS lookup through this server's resolver; unlike public DoH this leaks no setup data to Google. */

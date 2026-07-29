@@ -33,6 +33,7 @@ ENV PORT=6969
 ENV HOST=0.0.0.0
 COPY --from=build /app/.output ./.output
 COPY --from=build /app/scripts/provision-admin.mjs ./scripts/provision-admin.mjs
+COPY --from=build /app/scripts/check-jellyfin.mjs ./scripts/check-jellyfin.mjs
 EXPOSE 6969
 USER node
 CMD ["node", ".output/server/index.mjs"]
