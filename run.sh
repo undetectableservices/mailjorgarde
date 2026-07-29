@@ -755,7 +755,7 @@ backup_database() {
 
 doctor_stack() {
   require_complete_config
-  local failures=0
+  local failures=0 lan_bind https_port
   compose_for_mode
   "${COMPOSE[@]}" ps
   "${COMPOSE[@]}" exec -T db psql -U postgres -d postgres -qtAX -c 'SELECT 1' | grep -qx 1 \
@@ -775,6 +775,13 @@ doctor_stack() {
   else
     "${COMPOSE[@]}" exec -T caddy-lan caddy validate --config /etc/caddy/Caddyfile >/dev/null \
       || { warn "LAN Caddy configuration failed validation"; failures=$((failures + 1)); }
+    if [[ "$MODE" == "local-https" ]]; then
+      lan_bind="$(get_var LAN_BIND_ADDRESS)"
+      https_port="$(get_var HTTPS_LOCAL_PORT)"; https_port="${https_port:-8443}"
+      openssl s_client -connect "${lan_bind}:${https_port}" -noservername -showcerts </dev/null 2>/dev/null \
+        | grep -q -- 'BEGIN CERTIFICATE' \
+        || { warn "LAN HTTPS handshake failed"; failures=$((failures + 1)); }
+    fi
   fi
   if have getent; then
     local mail_host

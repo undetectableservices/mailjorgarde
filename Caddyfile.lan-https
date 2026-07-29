@@ -1,5 +1,11 @@
 # Single-origin LAN HTTPS gateway. `tls internal` uses Caddy's private CA;
 # clients must trust that CA or explicitly accept the browser warning.
+{
+	# IP-literal TLS clients correctly omit SNI. Docker's proxy hides the
+	# host-side destination IP, so explicitly select the managed LAN cert.
+	default_sni {$WEB_HOSTNAME}
+}
+
 https://{$WEB_HOSTNAME}:8443 {
 	tls internal
 	encode zstd gzip
