@@ -10,6 +10,7 @@ import {
   Radio,
   Settings,
   Shield,
+  SquarePen,
   UserRound,
   X,
 } from "lucide-react";
@@ -51,7 +52,7 @@ function Guard() {
           </div>
           <div className="flex items-center gap-2">
             <span className="signal-dot size-1.5 rounded-full" />
-            Establishing private session
+            Ouverture de votre espace…
           </div>
         </div>
       </div>
@@ -105,19 +106,42 @@ function Shell() {
     queryKey: ["dm-unread", user?.id],
     enabled: !!user,
     queryFn: async () => {
-      const { count } = await supabase
+      const { count, error } = await supabase
         .from("dms")
         .select("id", { count: "exact", head: true })
         .eq("recipient_id", user!.id)
         .is("seen_at", null);
+      if (error) throw error;
       return count ?? 0;
     },
-    refetchInterval: 15000,
+    refetchInterval: 10000,
   });
+
+  const { data: unreadByMailbox = {} } = useQuery({
+    queryKey: ["mail-unread-by-mailbox", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("mailbox_id")
+        .eq("folder", "inbox")
+        .eq("seen", false)
+        .limit(10_000);
+      if (error) throw error;
+      return (data ?? []).reduce<Record<string, number>>((counts, message) => {
+        counts[message.mailbox_id] = (counts[message.mailbox_id] ?? 0) + 1;
+        return counts;
+      }, {});
+    },
+    refetchInterval: 10000,
+  });
+
+  const unreadMail = Object.values(unreadByMailbox).reduce((total, count) => total + count, 0);
+  useNotificationFavicon(unreadMail + (dmUnread ?? 0));
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    toast.success("Signed out");
+    toast.success("Vous êtes déconnecté");
     navigate({ to: "/auth" });
   };
 
@@ -126,7 +150,7 @@ function Shell() {
       {mobileOpen && (
         <button
           type="button"
-          aria-label="Close navigation"
+          aria-label="Fermer la navigation"
           className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm md:hidden"
           onClick={() => setMobileOpen(false)}
         />
@@ -137,12 +161,16 @@ function Shell() {
       >
         <div className="px-2 pb-4 pt-2">
           <div className="flex items-center justify-between gap-3">
-            <Link to="/all" onClick={() => setMobileOpen(false)} aria-label="JorgardeMail inbox">
+            <Link
+              to="/all"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Boîte de réception JorgardeMail"
+            >
               <BrandLockup />
             </Link>
             <button
               type="button"
-              aria-label="Close navigation"
+              aria-label="Fermer la navigation"
               className="grid size-10 place-items-center rounded-xl text-muted-foreground hover:bg-sidebar-accent hover:text-foreground md:hidden"
               onClick={() => setMobileOpen(false)}
             >
@@ -153,12 +181,27 @@ function Shell() {
 
         <div className="mx-1 mb-4 h-px bg-gradient-to-r from-transparent via-sidebar-border to-transparent" />
 
+        <div className="px-1 pb-5">
+          <Link
+            to="/compose"
+            onClick={() => setMobileOpen(false)}
+            className="compose-cta flex min-h-12 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-bold text-white"
+          >
+            <SquarePen className="size-4" /> Nouveau message
+          </Link>
+        </div>
+
         <nav className="flex-1 space-y-1 overflow-y-auto px-1 text-sm">
           <div className="mb-2 px-3 text-[0.68rem] font-bold uppercase tracking-[0.16em] text-muted-foreground/70">
-            Workspace
+            Messagerie
           </div>
-          <NavItem to="/all" icon={<Inbox size={16} />} onNavigate={() => setMobileOpen(false)}>
-            All mail
+          <NavItem
+            to="/all"
+            icon={<Inbox size={16} />}
+            badge={unreadMail || undefined}
+            onNavigate={() => setMobileOpen(false)}
+          >
+            Boîte de réception
           </NavItem>
           <NavItem
             to="/dm"
@@ -166,14 +209,14 @@ function Shell() {
             badge={dmUnread || undefined}
             onNavigate={() => setMobileOpen(false)}
           >
-            Direct messages
+            Messages directs
           </NavItem>
 
           <div className="mb-1 mt-6 flex items-center justify-between px-3 text-[0.68rem] font-bold uppercase tracking-[0.16em] text-muted-foreground/70">
-            <span>Mailboxes</span>
+            <span>Mes adresses</span>
             <Link
               to="/mailboxes"
-              aria-label="Create mailbox"
+              aria-label="Créer une adresse"
               className="grid size-7 place-items-center rounded-lg text-gold hover:bg-sidebar-accent hover:text-foreground"
             >
               <Plus size={14} />
@@ -185,6 +228,7 @@ function Shell() {
               to="/m/$id"
               params={{ id: mailbox.id }}
               icon={<Mail size={14} />}
+              badge={unreadByMailbox[mailbox.id] || undefined}
               onNavigate={() => setMobileOpen(false)}
             >
               <span className="truncate">
@@ -192,14 +236,14 @@ function Shell() {
               </span>
               {mailbox.is_temp && (
                 <span className="ml-auto rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-gold">
-                  temp
+                  éphémère
                 </span>
               )}
             </NavItem>
           ))}
           {mailboxes && mailboxes.length === 0 && (
             <Link to="/mailboxes" className="nav-item text-muted-foreground">
-              + Create your first address
+              + Créer votre première adresse
             </Link>
           )}
         </nav>
@@ -210,14 +254,14 @@ function Shell() {
             icon={<Settings size={16} />}
             onNavigate={() => setMobileOpen(false)}
           >
-            Manage mailboxes
+            Gérer les adresses
           </NavItem>
           <NavItem
             to="/settings"
             icon={<UserRound size={16} />}
             onNavigate={() => setMobileOpen(false)}
           >
-            Account settings
+            Préférences
           </NavItem>
           {isAdmin && (
             <NavItem
@@ -225,11 +269,11 @@ function Shell() {
               icon={<Shield size={16} />}
               onNavigate={() => setMobileOpen(false)}
             >
-              Admin
+              Administration
             </NavItem>
           )}
           <button onClick={signOut} className="nav-item w-full text-left text-muted-foreground">
-            <LogOut size={16} /> Sign out
+            <LogOut size={16} /> Se déconnecter
           </button>
 
           <div className="profile-chip mt-3 flex items-center gap-3 rounded-2xl p-3">
@@ -239,13 +283,16 @@ function Shell() {
             </div>
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm font-semibold text-foreground">
-                {profile?.display_name || profile?.username || "Private user"}
+                {profile?.display_name || profile?.username || "Utilisateur"}
               </div>
               <div className="truncate text-xs text-muted-foreground">
-                @{profile?.username ?? "connecting"}
+                @{profile?.username ?? "connexion"}
               </div>
             </div>
-            <Radio className="size-4 shrink-0 text-brand-secondary" aria-label="Node online" />
+            <Radio
+              className="size-4 shrink-0 text-brand-secondary"
+              aria-label="Service disponible"
+            />
           </div>
         </div>
       </aside>
@@ -254,7 +301,7 @@ function Shell() {
         <div className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/75 px-4 backdrop-blur-xl md:hidden">
           <button
             type="button"
-            aria-label="Open navigation"
+            aria-label="Ouvrir la navigation"
             className="grid size-10 place-items-center rounded-xl border border-border bg-card/50 text-muted-foreground"
             onClick={() => setMobileOpen(true)}
           >
@@ -280,7 +327,10 @@ type NavItemBaseProps = {
 type NavItemProps = NavItemBaseProps &
   (
     | { to: "/m/$id"; params: { id: string } }
-    | { to: "/all" | "/dm" | "/mailboxes" | "/settings" | "/admin"; params?: never }
+    | {
+        to: "/all" | "/dm" | "/compose" | "/mailboxes" | "/settings" | "/admin";
+        params?: never;
+      }
   );
 
 function NavItem(props: NavItemProps) {
@@ -318,4 +368,64 @@ function NavItem(props: NavItemProps) {
       {content}
     </Link>
   );
+}
+
+function useNotificationFavicon(count: number) {
+  useEffect(
+    () => () => {
+      document.querySelector<HTMLLinkElement>("#notification-favicon")?.remove();
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    let link = document.querySelector<HTMLLinkElement>("#notification-favicon");
+    if (!link) {
+      link = document.createElement("link");
+      link.id = "notification-favicon";
+      link.rel = "icon";
+      document.head.appendChild(link);
+    }
+
+    if (count <= 0) {
+      link.type = "image/svg+xml";
+      link.href = "/icon.svg";
+      return;
+    }
+
+    let cancelled = false;
+    const icon = new Image();
+    icon.onload = () => {
+      if (cancelled) return;
+      const canvas = document.createElement("canvas");
+      canvas.width = 128;
+      canvas.height = 128;
+      const context = canvas.getContext("2d");
+      if (!context) return;
+
+      context.drawImage(icon, 0, 0, 128, 128);
+      context.beginPath();
+      context.arc(96, 32, 27, 0, Math.PI * 2);
+      context.fillStyle = "#ff4d74";
+      context.fill();
+      context.lineWidth = 7;
+      context.strokeStyle = "#090d18";
+      context.stroke();
+      context.fillStyle = "#ffffff";
+      context.font = "700 27px system-ui, sans-serif";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText(count > 9 ? "9+" : String(count), 96, 32);
+
+      link!.type = "image/png";
+      link!.href = canvas.toDataURL("image/png");
+    };
+    icon.src = "/icon.svg";
+
+    return () => {
+      cancelled = true;
+    };
+  }, [count]);
 }

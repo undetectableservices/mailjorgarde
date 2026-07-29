@@ -12,7 +12,7 @@ export const Route = createFileRoute("/_authenticated/dm/$id")({
   head: () => ({
     meta: [
       { title: "Conversation — JorgardeMail" },
-      { name: "description", content: "Direct message conversation." },
+      { name: "description", content: "Conversation privée." },
     ],
   }),
   component: DMThread,
@@ -66,8 +66,10 @@ function DMThread() {
 
   useEffect(() => {
     if (!user || !thread) return;
-    supabase.rpc("mark_dm_thread_seen", { p_thread_id: id }).then(() => {});
-  }, [id, user, thread, msgs?.length]);
+    supabase.rpc("mark_dm_thread_seen", { p_thread_id: id }).then(() => {
+      void queryClient.invalidateQueries({ queryKey: ["dm-unread", user.id] });
+    });
+  }, [id, user, thread, msgs?.length, queryClient]);
 
   useEffect(() => {
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -94,12 +96,12 @@ function DMThread() {
   };
 
   if (threadLoading) {
-    return <div className="p-8 text-sm text-muted-foreground">Loading conversation…</div>;
+    return <div className="p-8 text-sm text-muted-foreground">Ouverture de la conversation…</div>;
   }
   if (!thread) {
     return (
       <div className="p-8 text-sm text-muted-foreground">
-        Conversation not found or you no longer have access.
+        Cette conversation est introuvable ou n’est plus accessible.
       </div>
     );
   }
@@ -109,7 +111,7 @@ function DMThread() {
       <div className="flex items-center gap-3 border-b border-border bg-background/55 p-4 backdrop-blur-xl sm:px-6">
         <button
           type="button"
-          aria-label="Back to conversations"
+          aria-label="Retour aux conversations"
           onClick={() => navigate({ to: "/dm" })}
           className="grid size-10 place-items-center rounded-xl border border-border bg-card/45 text-muted-foreground hover:border-primary/30 hover:text-foreground"
         >
@@ -124,7 +126,17 @@ function DMThread() {
         </div>
       </div>
 
-      <div className="flex-1 space-y-3 overflow-y-auto p-4 sm:p-6">
+      <div className="flex-1 space-y-3 overflow-y-auto p-4 sm:p-6 lg:px-10 lg:py-8">
+        {msgs?.length === 0 && (
+          <div className="grid min-h-full place-items-center py-12 text-center text-sm text-muted-foreground">
+            <div>
+              <div className="mx-auto mb-4 grid size-14 place-items-center rounded-2xl border border-border bg-card/50 font-display text-xl text-brand-secondary">
+                {(thread.other?.username ?? "?")[0]?.toUpperCase()}
+              </div>
+              Commencez la conversation avec @{thread.other?.username}.
+            </div>
+          </div>
+        )}
         {(msgs ?? []).map((m) => {
           const mine = m.sender_id === user!.id;
           return (
@@ -136,8 +148,11 @@ function DMThread() {
                 <div
                   className={`mt-1 text-[0.68rem] ${mine ? "text-white/65" : "text-muted-foreground"}`}
                 >
-                  {new Date(m.created_at).toLocaleTimeString()}
-                  {mine && m.seen_at && " · seen"}
+                  {new Date(m.created_at).toLocaleTimeString("fr-FR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                  {mine && m.seen_at && " · vu"}
                 </div>
               </div>
             </div>
@@ -153,14 +168,14 @@ function DMThread() {
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), send())}
-          placeholder="Type a message…"
+          placeholder="Écrire un message…"
           rows={1}
           className="max-h-40 min-h-11 resize-none py-3"
         />
         <Button
           type="button"
           size="icon"
-          aria-label={sending ? "Sending message" : "Send message"}
+          aria-label={sending ? "Envoi du message" : "Envoyer le message"}
           onClick={send}
           disabled={sending || !body.trim()}
           className="bg-gold shrink-0 text-white"

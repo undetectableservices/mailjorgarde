@@ -49,19 +49,19 @@ const RESERVED = new Set([
 const REQUIRED_DOMAIN_ALIASES = new Set(["postmaster", "abuse"]);
 const TTL_PRESETS: Array<{ label: string; minutes: number | null }> = [
   { label: "10 minutes", minutes: 10 },
-  { label: "1 hour", minutes: 60 },
-  { label: "1 day", minutes: 60 * 24 },
-  { label: "7 days", minutes: 60 * 24 * 7 },
-  { label: "30 days", minutes: 60 * 24 * 30 },
+  { label: "1 heure", minutes: 60 },
+  { label: "1 jour", minutes: 60 * 24 },
+  { label: "7 jours", minutes: 60 * 24 * 7 },
+  { label: "30 jours", minutes: 60 * 24 * 30 },
 ];
 
 export const Route = createFileRoute("/_authenticated/mailboxes")({
   head: () => ({
     meta: [
-      { title: "Mailboxes — JorgardeMail" },
+      { title: "Mes adresses — JorgardeMail" },
       {
         name: "description",
-        content: "Create permanent or temporary addresses across your domains.",
+        content: "Créez et gérez vos adresses e-mail.",
       },
     ],
   }),
@@ -104,8 +104,8 @@ function Mailboxes() {
   const domainExpiry = (expires_at: string | null | undefined) => {
     if (!expires_at) return null;
     const days = Math.ceil((new Date(expires_at).getTime() - Date.now()) / 86400000);
-    if (days < 0) return { text: `Domain expired ${-days}d ago`, tone: "text-red-400" };
-    if (days <= 30) return { text: `Domain expires in ${days}d`, tone: "text-amber-400" };
+    if (days < 0) return { text: `Domaine expiré depuis ${-days} j`, tone: "text-red-400" };
+    if (days <= 30) return { text: `Domaine expirant dans ${days} j`, tone: "text-amber-400" };
     return null;
   };
 
@@ -120,12 +120,12 @@ function Mailboxes() {
     mutationFn: async () => {
       const lp = local.trim().toLowerCase();
       if (!/^[a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?$/.test(lp) || lp.includes("..")) {
-        throw new Error("Invalid address (1-64 characters: a-z, 0-9, . _ -)");
+        throw new Error("Adresse invalide (1 à 64 caractères : a-z, 0-9, . _ -)");
       }
       const head = lp.split(/[._-]/)[0];
-      if (RESERVED.has(lp) || RESERVED.has(head)) throw new Error("That name is reserved");
-      if (!domainId) throw new Error("Pick a domain");
-      if (used >= limit) throw new Error(`Quota reached (${limit} mailboxes)`);
+      if (RESERVED.has(lp) || RESERVED.has(head)) throw new Error("Ce nom est réservé");
+      if (!domainId) throw new Error("Choisissez un domaine");
+      if (used >= limit) throw new Error(`Quota atteint (${limit} adresses)`);
       const { error } = await supabase.rpc("create_mailbox", {
         p_local_part: lp,
         p_domain_id: domainId,
@@ -135,12 +135,12 @@ function Mailboxes() {
       if (error) throw error;
     },
     onSuccess: () => {
-      toast.success("Mailbox created");
+      toast.success("Adresse créée");
       setLocal("");
       qc.invalidateQueries({ queryKey: ["mailboxes"] });
       refetch();
     },
-    onError: (error) => toast.error(errorMessage(error, "Could not create the mailbox")),
+    onError: (error) => toast.error(errorMessage(error, "Impossible de créer l’adresse")),
   });
 
   const del = useMutation({
@@ -149,11 +149,11 @@ function Mailboxes() {
       if (error) throw error;
     },
     onSuccess: () => {
-      toast.success("Deleted");
+      toast.success("Adresse supprimée");
       qc.invalidateQueries({ queryKey: ["mailboxes"] });
       refetch();
     },
-    onError: (error) => toast.error(errorMessage(error, "Could not delete the mailbox")),
+    onError: (error) => toast.error(errorMessage(error, "Impossible de supprimer l’adresse")),
   });
 
   const extend = useMutation({
@@ -165,31 +165,32 @@ function Mailboxes() {
       if (error) throw error;
     },
     onSuccess: () => {
-      toast.success("Updated");
+      toast.success("Durée mise à jour");
       refetch();
     },
-    onError: (error) => toast.error(errorMessage(error, "Could not update the mailbox")),
+    onError: (error) => toast.error(errorMessage(error, "Impossible de modifier l’adresse")),
   });
 
   return (
     <div className="app-page">
       <PageHeader
-        eyebrow="Address control"
-        title="Mailboxes"
-        description={`Create permanent or temporary addresses. Your account can own up to ${limit}.`}
+        eyebrow="Gestion des adresses"
+        title="Mes adresses"
+        description={`Créez des adresses permanentes ou éphémères. Votre compte peut en posséder jusqu’à ${limit}.`}
         actions={
           <div className="premium-badge normal-case tracking-normal">
-            <AtSign className="size-3.5" /> {Math.max(0, limit - used)} available
+            <AtSign className="size-3.5" /> {Math.max(0, limit - used)} disponible
+            {Math.max(0, limit - used) > 1 ? "s" : ""}
           </div>
         }
       />
 
-      <div className="noir-panel mb-6 rounded-2xl p-5">
+      <div className="noir-panel mb-6 rounded-3xl p-5">
         <div className="flex items-center justify-between mb-2 text-sm">
           <span>
-            {used} / {limit} used
+            {used} / {limit} utilisées
           </span>
-          <span className="text-muted-foreground">{Math.max(0, limit - used)} remaining</span>
+          <span className="text-muted-foreground">{Math.max(0, limit - used)} restantes</span>
         </div>
         <Progress
           value={limit > 0 ? Math.min(100, (used / limit) * 100) : used > 0 ? 100 : 0}
@@ -197,32 +198,32 @@ function Mailboxes() {
         />
       </div>
 
-      <div className="noir-panel mb-8 space-y-4 rounded-2xl p-5 sm:p-6">
+      <div className="noir-panel mb-8 space-y-4 rounded-3xl p-5 sm:p-7">
         <div className="flex items-center gap-3">
           <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-brand-secondary ring-1 ring-primary/15">
             <Plus className="size-5" />
           </div>
           <div>
-            <h2 className="font-display text-xl">Create new address</h2>
-            <p className="text-xs text-muted-foreground">Choose a domain and lifetime.</p>
+            <h2 className="font-display text-xl">Créer une adresse</h2>
+            <p className="text-xs text-muted-foreground">Choisissez un domaine et une durée.</p>
           </div>
         </div>
         {!domains || domains.length === 0 ? (
           <div className="text-sm text-muted-foreground">
-            No domains configured yet. An admin needs to add one first.
+            Aucun domaine n’est encore configuré. Un administrateur doit d’abord en ajouter un.
           </div>
         ) : (
           <>
             <div className="grid md:grid-cols-[1fr_auto_1fr] gap-2 items-center">
               <Input
-                placeholder="local-part"
+                placeholder="nom-de-l’adresse"
                 value={local}
                 onChange={(e) => setLocal(e.target.value)}
               />
               <span className="text-muted-foreground">@</span>
               <Select value={domainId} onValueChange={setDomainId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Choose domain" />
+                  <SelectValue placeholder="Choisir un domaine" />
                 </SelectTrigger>
                 <SelectContent>
                   {domains.map((d) => {
@@ -241,7 +242,7 @@ function Mailboxes() {
             </div>
             <div className="flex flex-wrap gap-4 items-center">
               <label className="flex items-center gap-2 text-sm">
-                <Switch checked={isTemp} onCheckedChange={setIsTemp} /> Temporary
+                <Switch checked={isTemp} onCheckedChange={setIsTemp} /> Éphémère
               </label>
               {isTemp && (
                 <Select value={String(ttl)} onValueChange={(v) => setTtl(Number(v))}>
@@ -262,11 +263,11 @@ function Mailboxes() {
                 disabled={create.isPending}
                 className="bg-gold ml-auto text-white"
               >
-                Create
+                Créer
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Reserved names (admin, server, owner, root, postmaster, etc.) can't be used.
+              Certains noms techniques sont réservés et ne peuvent pas être utilisés.
             </p>
           </>
         )}
@@ -293,8 +294,8 @@ function Mailboxes() {
               </div>
               <div className="text-xs text-muted-foreground">
                 {mb.is_temp
-                  ? `Temporary — expires ${mb.expires_at ? new Date(mb.expires_at).toLocaleString() : "?"}`
-                  : "Permanent"}
+                  ? `Éphémère — expire ${mb.expires_at ? new Date(mb.expires_at).toLocaleString("fr-FR") : "?"}`
+                  : "Permanente"}
               </div>
             </div>
             {mb.is_temp && (
@@ -304,7 +305,7 @@ function Mailboxes() {
                 }
               >
                 <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Extend" />
+                  <SelectValue placeholder="Prolonger" />
                 </SelectTrigger>
                 <SelectContent>
                   {TTL_PRESETS.map((p) => (
@@ -312,7 +313,7 @@ function Mailboxes() {
                       +{p.label}
                     </SelectItem>
                   ))}
-                  <SelectItem value="perm">Make permanent</SelectItem>
+                  <SelectItem value="perm">Rendre permanente</SelectItem>
                 </SelectContent>
               </Select>
             )}
@@ -320,13 +321,13 @@ function Mailboxes() {
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label={`Delete ${mb.local_part}@${mb.domain?.name}`}
+                aria-label={`Supprimer ${mb.local_part}@${mb.domain?.name}`}
                 disabled={del.isPending}
                 onClick={() => {
                   const address = `${mb.local_part}@${mb.domain?.name}`;
                   if (
                     window.confirm(
-                      `Delete ${address} and every message stored in it? This cannot be undone.`,
+                      `Supprimer ${address} ainsi que tous ses messages ? Cette action est irréversible.`,
                     )
                   ) {
                     del.mutate(mb.id);
@@ -342,7 +343,7 @@ function Mailboxes() {
           <div className="empty-state">
             <div>
               <AtSign className="mx-auto mb-4 size-8 text-brand-secondary/70" />
-              No mailboxes yet.
+              Aucune adresse pour le moment.
             </div>
           </div>
         )}

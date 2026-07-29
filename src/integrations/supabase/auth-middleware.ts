@@ -41,7 +41,7 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
         ...(!SUPABASE_URL ? ["SUPABASE_URL"] : []),
         ...(!SUPABASE_PUBLISHABLE_KEY ? ["SUPABASE_PUBLISHABLE_KEY"] : []),
       ];
-      const message = `Missing self-hosted API environment variable(s): ${missing.join(", ")}. Check /etc/mailjorgarde/mailjorgarde.env and restart the service.`;
+      const message = `Configuration du service incomplète (${missing.join(", ")}). Vérifiez /etc/mailjorgarde/mailjorgarde.env puis redémarrez le service.`;
       console.error(`[Supabase] ${message}`);
       throw new Error(message);
     }

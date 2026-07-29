@@ -26,7 +26,7 @@ export function BrandLockup({ compact = false }: { compact?: boolean }) {
         <div className={cn("brand-wordmark truncate", compact ? "text-lg" : "text-xl")}>
           JorgardeMail
         </div>
-        {!compact && <div className="brand-caption mt-1.5">Private communications</div>}
+        {!compact && <div className="brand-caption mt-1.5">Messagerie personnelle</div>}
       </div>
     </div>
   );

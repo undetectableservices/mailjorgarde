@@ -40,45 +40,45 @@ export function AdminUserProvisioning({ onCreated }: { onCreated: () => void }) 
       setDisplayName("");
       setPassword(generatePassword());
       onCreated();
-      toast.success(`Created @${result.username}`);
+      toast.success(`Compte @${result.username} créé`);
     },
     onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "User creation failed"),
+      toast.error(error instanceof Error ? error.message : "La création du compte a échoué"),
   });
 
   return (
-    <div className="noir-panel space-y-4 rounded-2xl p-5">
+    <div className="noir-panel space-y-4 rounded-3xl p-5 sm:p-6">
       <div>
-        <h2 className="font-display text-xl">Create a local account</h2>
+        <h2 className="font-display text-xl">Créer un compte</h2>
         <p className="text-xs text-muted-foreground mt-1">
-          Jellyfin members can self-register. Use this for a service-only account, then share its
-          one-time password securely.
+          Les membres Jellyfin peuvent s’inscrire eux-mêmes. Utilisez cette option pour un compte de
+          service, puis transmettez son mot de passe initial par un canal sûr.
         </p>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         <div>
-          <Label htmlFor="new-local-username">Username</Label>
+          <Label htmlFor="new-local-username">Identifiant</Label>
           <Input
             id="new-local-username"
             autoCapitalize="none"
             autoCorrect="off"
             value={username}
             onChange={(event) => setUsername(event.target.value.toLowerCase())}
-            placeholder="friend"
+            placeholder="utilisateur"
           />
         </div>
         <div>
-          <Label htmlFor="new-local-display-name">Display name</Label>
+          <Label htmlFor="new-local-display-name">Nom affiché</Label>
           <Input
             id="new-local-display-name"
             value={displayName}
             onChange={(event) => setDisplayName(event.target.value)}
-            placeholder="Optional"
+            placeholder="Facultatif"
           />
         </div>
       </div>
       <div>
-        <Label htmlFor="new-local-password">Initial password</Label>
+        <Label htmlFor="new-local-password">Mot de passe initial</Label>
         <div className="flex gap-2">
           <Input
             id="new-local-password"
@@ -90,7 +90,7 @@ export function AdminUserProvisioning({ onCreated }: { onCreated: () => void }) 
             onChange={(event) => setPassword(event.target.value)}
           />
           <Button type="button" variant="outline" onClick={() => setPassword(generatePassword())}>
-            Regenerate
+            Régénérer
           </Button>
         </div>
       </div>
@@ -100,12 +100,12 @@ export function AdminUserProvisioning({ onCreated }: { onCreated: () => void }) 
         disabled={!username.trim() || password.length < 12 || mutation.isPending}
         onClick={() => mutation.mutate()}
       >
-        {mutation.isPending ? "Creating…" : "Create user"}
+        {mutation.isPending ? "Création…" : "Créer le compte"}
       </Button>
 
       {created && (
         <div className="rounded-lg border border-amber-400/40 bg-amber-400/10 p-3 text-sm">
-          <div className="font-medium text-amber-300">Copy these credentials now</div>
+          <div className="font-medium text-amber-300">Copiez ces identifiants maintenant</div>
           <div className="font-mono mt-1 break-all">
             @{created.username} / {created.password}
           </div>
@@ -117,13 +117,13 @@ export function AdminUserProvisioning({ onCreated }: { onCreated: () => void }) 
             onClick={async () => {
               try {
                 await copyText(`@${created.username}\n${created.password}`);
-                toast.success("Credentials copied");
+                toast.success("Identifiants copiés");
               } catch (error) {
-                toast.error(error instanceof Error ? error.message : "Copy failed");
+                toast.error(error instanceof Error ? error.message : "La copie a échoué");
               }
             }}
           >
-            Copy credentials
+            Copier les identifiants
           </Button>
         </div>
       )}
@@ -137,17 +137,17 @@ export function ResetUserPassword({ userId, username }: { userId: string; userna
   const mutation = useMutation({
     mutationFn: () => resetPassword({ data: { userId, password } }),
     onSuccess: () => {
-      toast.success(`Password reset for @${username}`);
+      toast.success(`Mot de passe réinitialisé pour @${username}`);
       setPassword("");
     },
     onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Password reset failed"),
+      toast.error(error instanceof Error ? error.message : "La réinitialisation a échoué"),
   });
 
   return (
     <details className="w-full text-xs">
       <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
-        Reset password
+        Réinitialiser le mot de passe
       </summary>
       <div className="mt-2 flex gap-2">
         <Input
@@ -157,7 +157,7 @@ export function ResetUserPassword({ userId, username }: { userId: string; userna
           maxLength={128}
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          placeholder="New password (12+ characters)"
+          placeholder="Nouveau mot de passe (12 caractères minimum)"
         />
         <Button
           type="button"
@@ -165,7 +165,7 @@ export function ResetUserPassword({ userId, username }: { userId: string; userna
           variant="outline"
           onClick={() => setPassword(generatePassword())}
         >
-          Generate
+          Générer
         </Button>
         <Button
           type="button"
@@ -173,7 +173,7 @@ export function ResetUserPassword({ userId, username }: { userId: string; userna
           disabled={password.length < 12 || mutation.isPending}
           onClick={() => mutation.mutate()}
         >
-          Set
+          Appliquer
         </Button>
       </div>
     </details>

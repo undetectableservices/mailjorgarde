@@ -7,16 +7,24 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { ListSkeleton } from "@/components/list-skeleton";
 import { formatDistanceToNowStrict } from "date-fns";
+import { fr } from "date-fns/locale";
 import { Inbox, Search } from "lucide-react";
 
-const FOLDERS = ["inbox", "archive", "trash", "spam"] as const;
+const FOLDERS = ["inbox", "sent", "archive", "trash", "spam"] as const;
 type Folder = (typeof FOLDERS)[number];
+const FOLDER_LABELS: Record<Folder, string> = {
+  inbox: "Réception",
+  sent: "Envoyés",
+  archive: "Archives",
+  trash: "Corbeille",
+  spam: "Indésirables",
+};
 
 export const Route = createFileRoute("/_authenticated/all")({
   head: () => ({
     meta: [
-      { title: "All mail — JorgardeMail" },
-      { name: "description", content: "Every message across every mailbox you own." },
+      { title: "Boîte de réception — JorgardeMail" },
+      { name: "description", content: "Tous vos e-mails réunis au même endroit." },
     ],
   }),
   component: AllMail,
@@ -41,7 +49,7 @@ function AllMail() {
       let query = supabase
         .from("messages")
         .select(
-          "id, subject, sender, recipient_addr, received_at, seen, mailbox_id, mailboxes!inner(local_part, domains(name))",
+          "id, subject, sender, body_text, recipient_addr, received_at, seen, mailbox_id, mailboxes!inner(local_part, domains(name))",
         )
         .eq("folder", folder)
         .order("received_at", { ascending: false })
@@ -61,16 +69,16 @@ function AllMail() {
   return (
     <div className="app-page">
       <PageHeader
-        eyebrow="Unified inbox"
-        title="All mail"
+        eyebrow="Votre messagerie"
+        title="Boîte de réception"
         description={
           isLoading
-            ? "Syncing messages across every address you own…"
-            : `${rows.length} message${rows.length === 1 ? "" : "s"} across every address you own.`
+            ? "Actualisation de vos messages…"
+            : `${rows.length} message${rows.length === 1 ? "" : "s"} sur l’ensemble de vos adresses.`
         }
         actions={
           <div className="premium-badge normal-case tracking-normal">
-            <Inbox className="size-3.5" /> Live inbox
+            <Inbox className="size-3.5" /> Synchronisée
           </div>
         }
       />
@@ -83,20 +91,20 @@ function AllMail() {
               type="button"
               size="sm"
               variant={folder === name ? "default" : "outline"}
-              className={folder === name ? "bg-gold capitalize text-white" : "capitalize"}
+              className={folder === name ? "bg-gold text-white" : ""}
               onClick={() => setFolder(name)}
             >
-              {name}
+              {FOLDER_LABELS[name]}
             </Button>
           ))}
         </div>
         <div className="relative sm:ml-auto sm:w-full sm:max-w-sm">
           <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            aria-label="Search mail"
+            aria-label="Rechercher dans les e-mails"
             value={q}
             onChange={(event) => setQ(event.target.value)}
-            placeholder="Search subject, sender, body…"
+            placeholder="Rechercher un objet, un expéditeur…"
             className="border-border bg-black/15 pl-10"
           />
         </div>
@@ -108,7 +116,9 @@ function AllMail() {
           <div className="empty-state">
             <div>
               <Inbox className="mx-auto mb-4 size-8 text-brand-secondary/70" />
-              {debounced ? "No messages match your search." : `No messages in ${folder}.`}
+              {debounced
+                ? "Aucun message ne correspond à votre recherche."
+                : `Aucun message dans ${FOLDER_LABELS[folder].toLowerCase()}.`}
             </div>
           </div>
         )}
@@ -123,20 +133,29 @@ function AllMail() {
                 className="mail-row cv-auto group flex items-center gap-4 px-5 py-3.5"
                 style={{ animation: `jm-fade-up 420ms ease-out both ${Math.min(i, 8) * 26}ms` }}
               >
-                <span
-                  className={`size-2 rounded-full ${m.seen ? "bg-transparent" : "signal-dot jm-pulse-gold"}`}
-                />
+                <span className="relative grid size-10 shrink-0 place-items-center rounded-2xl border border-white/[0.06] bg-white/[0.035] text-xs font-bold text-muted-foreground">
+                  {(m.sender || "?").trim()[0]?.toUpperCase()}
+                  {!m.seen && (
+                    <span className="signal-dot jm-pulse-gold absolute -right-0.5 -top-0.5 size-2 rounded-full" />
+                  )}
+                </span>
                 <span
                   className={`flex-1 min-w-0 ${m.seen ? "text-muted-foreground" : "font-semibold"}`}
                 >
-                  <span className="block truncate">{m.subject || "(no subject)"}</span>
-                  <span className="block text-xs text-muted-foreground truncate">{m.sender}</span>
+                  <span className="block truncate text-[0.94rem]">{m.subject || "Sans objet"}</span>
+                  <span className="mt-1 block truncate text-xs text-muted-foreground">
+                    {m.sender}
+                    {m.body_text ? ` — ${m.body_text.replace(/\s+/g, " ").slice(0, 90)}` : ""}
+                  </span>
                 </span>
                 <span className="hidden max-w-[220px] truncate rounded-full border border-brand-secondary/20 bg-brand-secondary/5 px-2.5 py-1 text-xs text-brand-secondary md:inline">
-                  to {addr}
+                  vers {addr}
                 </span>
                 <span className="text-xs text-muted-foreground w-16 text-right shrink-0">
-                  {formatDistanceToNowStrict(new Date(m.received_at), { addSuffix: false })}
+                  {formatDistanceToNowStrict(new Date(m.received_at), {
+                    addSuffix: false,
+                    locale: fr,
+                  })}
                 </span>
               </Link>
             );

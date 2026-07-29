@@ -41,14 +41,14 @@ export async function probeTcp(
         host,
         port,
         open: false,
-        error: error instanceof Error ? error.message : "connect failed",
+        error: error instanceof Error ? error.message : "échec de la connexion",
         ms: Date.now() - started,
       });
     }
 
     socket.setTimeout(timeoutMs);
-    socket.on("timeout", () => done({ error: "timed out — port is filtered or closed" }));
-    socket.on("error", (error) => done({ error: error.message || "connection refused" }));
+    socket.on("timeout", () => done({ error: "délai dépassé — port filtré ou fermé" }));
+    socket.on("error", () => done({ error: "connexion refusée ou inaccessible" }));
     socket.on("connect", () => {
       if (!readBanner) return done({ open: true });
       // give the peer a moment to send its greeting

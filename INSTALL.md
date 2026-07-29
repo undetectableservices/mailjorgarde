@@ -1,8 +1,9 @@
 # Install and operate JorgardeMail
 
 JorgardeMail is self-hosted at runtime: PostgreSQL, authentication, the data
-API, web application, internal direct messages, and the receive-only SMTP
-service run on your Linux host. Mail and account data stay in your database.
+API, web application, internal direct messages, inbound SMTP service, and
+outbound relay client run on your Linux host. Mail and account data stay in
+your database.
 
 It is not an offline appliance. Internet delivery still depends on public DNS
 (or a DDNS provider), your router and ISP, and other mail servers. Installation
@@ -19,9 +20,11 @@ public certificate authority for the website.
 - Stores code under `/opt`, secrets under `/etc`, TLS state under `/var/lib`,
   and verified backups under `/var/backups`.
 - Starts on reboot through systemd and Docker restart policies.
+- Sends internet email through an optional authenticated SMTP relay, with
+  per-user rate limits and a private delivery audit ledger.
 
-This build is receive-only. It does not send email to arbitrary internet
-recipients and does not expose client-submission services.
+Outbound delivery does not expose a client-submission port. The web service
+opens a TLS-protected connection to the configured relay on port 587 or 465.
 
 ## Requirements
 
@@ -32,6 +35,8 @@ recipients and does not expose client-submission services.
 - A reserved LAN IPv4 address for this host.
 - For internet receipt: a public IPv4 address that is not behind CGNAT, an ISP
   that permits inbound TCP 25, router forwarding for TCP 25, and DNS control.
+- For internet sending: credentials for a reputable authenticated SMTP relay
+  that authorizes every sending domain and address used by JorgardeMail.
 - Enough disk for the database and backups. Mail storage is persistent and can
   grow; monitor free space.
 
@@ -82,9 +87,10 @@ The first run:
 
 1. Verifies Docker, Compose, OpenSSL, systemd, and required host tools.
 2. Creates `/etc/mailjorgarde/mailjorgarde.env` as `root:root` mode `0600`.
-3. Prompts for the explicit LAN bind address, stable MX/DDNS hostname, and a
-   Jellyfin URL/API key used to gate self-registration. For Jellyfin on the
-   Docker host, use `http://LAN_BIND_ADDRESS:8096`, not `localhost`.
+3. Prompts for the explicit LAN bind address, stable MX/DDNS hostname, a
+   Jellyfin URL/API key used to gate self-registration, and whether to configure
+   authenticated outbound SMTP. For Jellyfin on the Docker host, use
+   `http://LAN_BIND_ADDRESS:8096`, not `localhost`.
 4. Generates database, JWT, API, webhook, and SMTP TLS credentials locally.
 5. Validates Compose, builds images, applies database migrations, and waits for
    database/auth/API/web/SMTP readiness.
@@ -111,6 +117,63 @@ Create the API key in **Jellyfin Dashboard → Advanced → API Keys**. It is sa
 only in `/etc/mailjorgarde/mailjorgarde.env`, which is root-owned mode `0600`.
 Re-running `sudo ./run.sh --rebuild` prompts for these Jellyfin settings when
 an upgraded installation does not have them yet.
+
+## Outbound email through a relay
+
+A DDNS hostname and dynamic residential IP are suitable as an MX target when
+TCP 25 is reachable, but they are generally a poor direct sending identity.
+Many recipient systems reject residential ranges, and reverse DNS is normally
+controlled by the ISP. JorgardeMail therefore sends through an authenticated
+SMTP relay when outbound delivery is enabled.
+
+During installation, answer `yes` to the outbound-email prompt and enter:
+
+- the relay hostname;
+- port `587` with `starttls`, or port `465` with `tls`;
+- the relay username;
+- the relay password or SMTP API key.
+
+The password is stored only in
+`/etc/mailjorgarde/mailjorgarde.env` (`root:root`, mode `0600`) and passed only
+to the web container. It is base64-encoded solely to preserve special
+characters through Compose parsing; this is not encryption, so the value must
+still be protected as a secret. It is never returned to the browser. TLS certificate
+validation is mandatory and TLS 1.2 is the minimum. The application refuses a
+sender address unless the signed-in user owns that exact mailbox. It also
+limits each message to 25 recipients by default, each account to 60 attempts
+per hour and 500 recipients per rolling 24 hours, and records only delivery
+metadata in a private database schema.
+
+No router forward is needed for ports 465 or 587. The server only makes an
+outbound connection. A provider may require its egress port to be allowed by
+the host/network firewall.
+
+The relay account alone is not enough. For every domain that sends, complete
+the provider's domain-verification flow and publish exactly the records it
+provides:
+
+1. SPF, normally one provider-specific `include` mechanism. Keep a single SPF
+   TXT record; merge authorized senders instead of publishing multiple SPF
+   records.
+2. DKIM, using the selector, record type and value issued by the relay.
+3. DMARC at `_dmarc.DOMAIN`. Start with `p=none` and reporting, verify that SPF
+   or DKIM aligns with the visible From domain, then move to `quarantine` or
+   `reject`.
+
+The relay should provide DKIM signing, a reputable sending IP, correct reverse
+DNS and bounce handling. Those properties cannot be created by this web
+application. Some providers also require each From address to be verified or
+restrict trial accounts to approved recipients.
+
+After rebuilding, verify the authenticated connection without sending mail:
+
+```bash
+sudo /opt/mailjorgarde/current/run.sh --doctor
+```
+
+Then send a real message from the Compose screen to an unrelated mailbox and
+inspect SPF, DKIM and DMARC results in that message's received headers. The
+relay accepting a message proves handoff, not final inbox placement.
 
 ## Deployment modes
 

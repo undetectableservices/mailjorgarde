@@ -1,12 +1,24 @@
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  Archive,
+  ArrowLeft,
+  ArrowUpRight,
+  ChevronDown,
+  Download,
+  Inbox,
+  MailOpen,
+  Paperclip,
+  Reply,
+  Trash2,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ArrowLeft, ArrowUpRight, Download, MailOpen, Paperclip } from "lucide-react";
-import { createIsolatedEmailDocument } from "@/lib/email-html";
-import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { createIsolatedEmailDocument, normalizeEmailContentId } from "@/lib/email-html";
 
 type MessageAttachment = {
   id: string;
@@ -14,52 +26,96 @@ type MessageAttachment = {
   mime: string | null;
   size: number;
   content_base64: string | null;
+  content_id: string | null;
   content_disposition: string | null;
 };
 
+const FOLDER_LABELS: Record<string, string> = {
+  inbox: "Réception",
+  sent: "Envoyés",
+  archive: "Archives",
+  trash: "Corbeille",
+  spam: "Indésirables",
+};
+
+const INLINE_IMAGE_MIMES = new Set(["image/gif", "image/jpeg", "image/png", "image/webp"]);
+const MAX_INLINE_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_INLINE_IMAGES_BYTES = 10 * 1024 * 1024;
+
+function buildInlineImageMap(attachments: MessageAttachment[]): ReadonlyMap<string, string> {
+  const images = new Map<string, string>();
+  let totalBytes = 0;
+  for (const attachment of attachments) {
+    const mime = (attachment.mime || "").split(";", 1)[0].trim().toLowerCase();
+    const content = attachment.content_base64 || "";
+    const contentId = attachment.content_id ? normalizeEmailContentId(attachment.content_id) : "";
+    if (!contentId || !INLINE_IMAGE_MIMES.has(mime) || !/^[A-Za-z0-9+/]*={0,2}$/.test(content)) {
+      continue;
+    }
+    const estimatedBytes = Math.floor((content.length * 3) / 4);
+    if (
+      estimatedBytes <= 0 ||
+      estimatedBytes > MAX_INLINE_IMAGE_BYTES ||
+      totalBytes + estimatedBytes > MAX_INLINE_IMAGES_BYTES
+    ) {
+      continue;
+    }
+    totalBytes += estimatedBytes;
+    images.set(contentId, `data:${mime};base64,${content}`);
+  }
+  return images;
+}
+
 function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Kio`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} Mio`;
 }
 
 function downloadAttachment(attachment: MessageAttachment) {
   if (!attachment.content_base64) {
-    toast.error("Attachment content is unavailable for this older message");
+    toast.error("Le contenu de cette pièce jointe n’est plus disponible");
     return;
   }
   try {
     const binary = atob(attachment.content_base64);
     const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
-    const url = URL.createObjectURL(new Blob([bytes], { type: "application/octet-stream" }));
+    const url = URL.createObjectURL(
+      new Blob([bytes], { type: attachment.mime || "application/octet-stream" }),
+    );
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = attachment.filename || "attachment";
+    anchor.download = attachment.filename || "piece-jointe";
     anchor.rel = "noopener";
     anchor.click();
     setTimeout(() => URL.revokeObjectURL(url), 1_000);
   } catch {
-    toast.error("The stored attachment is corrupt");
+    toast.error("Cette pièce jointe semble endommagée");
   }
 }
 
 function displayRawMessage(raw: string | null): string {
-  if (!raw) return "(raw source unavailable)";
+  if (!raw) return "(source originale indisponible)";
   if (!raw.startsWith("base64:")) return raw;
   try {
     const binary = atob(raw.slice("base64:".length));
     const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
     return new TextDecoder("utf-8").decode(bytes);
   } catch {
-    return "(stored raw source is corrupt)";
+    return "(la source enregistrée est endommagée)";
   }
+}
+
+function replyAddress(sender: string): string {
+  const bracketed = sender.match(/<([^<>]+)>/);
+  return (bracketed?.[1] || sender).trim();
 }
 
 export const Route = createFileRoute("/_authenticated/msg/$id")({
   head: () => ({
     meta: [
       { title: "Message — JorgardeMail" },
-      { name: "description", content: "Message detail." },
+      { name: "description", content: "Lecture d’un e-mail." },
     ],
   }),
   component: MessageDetail,
@@ -68,213 +124,318 @@ export const Route = createFileRoute("/_authenticated/msg/$id")({
 function MessageDetail() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
-  const [tab, setTab] = useState<"text" | "html" | "raw">("text");
+  const queryClient = useQueryClient();
+  const [tab, setTab] = useState<"text" | "html" | "raw">("html");
   const [showHeaders, setShowHeaders] = useState(false);
 
-  const { data: m, refetch } = useQuery({
+  const {
+    data: message,
+    isLoading,
+    isError,
+    refetch,
+  } = useQuery({
     queryKey: ["msg", id],
-    queryFn: async () =>
-      (
-        await supabase
-          .from("messages")
-          .select(
-            "*, mailboxes(local_part, domains(name)), attachments(id, filename, mime, size, content_base64, content_disposition)",
-          )
-          .eq("id", id)
-          .maybeSingle()
-      ).data,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("messages")
+        .select(
+          "*, mailboxes(local_part, domains(name)), attachments(id, filename, mime, size, content_base64, content_id, content_disposition)",
+        )
+        .eq("id", id)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
   });
 
   useEffect(() => {
-    if (m && !m.seen) {
-      supabase
-        .from("messages")
-        .update({ seen: true })
-        .eq("id", id)
-        .then(() => refetch());
-    }
-  }, [m, id, refetch]);
+    if (!message?.body_html && tab === "html") setTab("text");
+  }, [message?.body_html, tab]);
 
-  if (!m) return <div className="p-8 text-muted-foreground">Loading…</div>;
-  const addr = `${m.mailboxes?.local_part}@${m.mailboxes?.domains?.name}`;
+  useEffect(() => {
+    if (!message || message.seen) return;
+    void supabase
+      .from("messages")
+      .update({ seen: true })
+      .eq("id", id)
+      .then(({ error }) => {
+        if (error) {
+          console.error("[message] impossible de marquer le message comme lu", error);
+          return;
+        }
+        queryClient.setQueryData(["msg", id], { ...message, seen: true });
+        void queryClient.invalidateQueries({ queryKey: ["mail-unread-by-mailbox"] });
+      });
+  }, [id, message, queryClient]);
+
+  const inlineImages = useMemo(
+    () => buildInlineImageMap((message?.attachments as MessageAttachment[] | undefined) ?? []),
+    [message?.attachments],
+  );
+
+  if (isLoading) {
+    return (
+      <div className="app-page app-page-reader">
+        <div className="reader-surface grid min-h-[70dvh] place-items-center text-sm text-muted-foreground">
+          Ouverture du message…
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="app-page app-page-reader">
+        <div className="reader-surface grid min-h-[50dvh] place-items-center p-8 text-center">
+          <div>
+            <p className="text-sm text-muted-foreground">
+              Impossible de charger ce message pour le moment.
+            </p>
+            <Button className="mt-4" variant="outline" onClick={() => void refetch()}>
+              Réessayer
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!message) {
+    return (
+      <div className="app-page app-page-reader">
+        <div className="reader-surface grid min-h-[50dvh] place-items-center text-center text-muted-foreground">
+          Ce message est introuvable ou n’est plus disponible.
+        </div>
+      </div>
+    );
+  }
+
+  const address = `${message.mailboxes?.local_part}@${message.mailboxes?.domains?.name}`;
+  const isSent = message.folder === "sent";
+  const archive = async () => {
+    const { error } = await supabase.from("messages").update({ folder: "archive" }).eq("id", id);
+    if (error) {
+      toast.error("Impossible d’archiver ce message");
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ["mail-unread-by-mailbox"] });
+    navigate({ to: "/all" });
+  };
+  const trash = async () => {
+    let error: { message: string } | null;
+    if (message.folder === "trash") {
+      if (!window.confirm("Supprimer définitivement ce message ? Cette action est irréversible."))
+        return;
+      ({ error } = await supabase.from("messages").delete().eq("id", id));
+    } else {
+      ({ error } = await supabase.from("messages").update({ folder: "trash" }).eq("id", id));
+    }
+    if (error) {
+      toast.error(
+        message.folder === "trash"
+          ? "Impossible de supprimer ce message"
+          : "Impossible de déplacer ce message dans la corbeille",
+      );
+      return;
+    }
+    await queryClient.invalidateQueries({ queryKey: ["mail-unread-by-mailbox"] });
+    navigate({ to: "/all" });
+  };
 
   return (
-    <div className="app-page app-page-narrow">
-      <button
-        type="button"
-        onClick={() => navigate({ to: "/all" })}
-        className="mb-5 inline-flex min-h-10 items-center gap-2 rounded-xl border border-transparent px-2 text-sm text-muted-foreground hover:border-border hover:bg-card/45 hover:text-foreground"
-      >
-        <ArrowLeft size={14} /> Back
-      </button>
-
-      <div className="noir-panel mb-4 rounded-3xl p-6 sm:p-8">
-        <div className="mb-5 flex items-center justify-between gap-4">
-          <div className="page-eyebrow mb-0">Inbound message</div>
-          <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-brand-secondary ring-1 ring-primary/15">
-            <MailOpen className="size-5" />
-          </div>
-        </div>
-        <h1 className="font-display text-3xl leading-tight sm:text-4xl">
-          {m.subject || "(no subject)"}
-        </h1>
-        <div className="mt-3 flex flex-wrap gap-3 text-sm text-muted-foreground">
-          <span>
-            From <span className="text-foreground">{m.sender}</span>
-          </span>
-          <span>·</span>
-          <span>{new Date(m.received_at).toLocaleString()}</span>
-        </div>
-        <div className="mt-5 inline-flex max-w-full rounded-full border border-brand-secondary/20 bg-brand-secondary/5 px-3 py-1 text-xs text-brand-secondary">
-          <span className="truncate">to {addr}</span>
-        </div>
-      </div>
-
-      {m.attachments && m.attachments.length > 0 && (
-        <div className="noir-panel mb-4 rounded-2xl p-4">
-          <div className="flex items-center gap-2 text-sm font-medium mb-3">
-            <Paperclip size={15} />
-            {m.attachments.length} attachment{m.attachments.length === 1 ? "" : "s"}
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {m.attachments.map((attachment: MessageAttachment) => (
-              <Button
-                key={attachment.id}
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => downloadAttachment(attachment)}
-                title={attachment.mime || "attachment"}
-              >
-                <Download size={13} />
-                <span className="max-w-64 truncate">{attachment.filename}</span>
-                <span className="text-muted-foreground">{formatBytes(attachment.size)}</span>
-              </Button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
-          <TabsList>
-            {(["text", "html", "raw"] as const).map((item) => (
-              <TabsTrigger key={item} value={item} className="uppercase tracking-wider">
-                {item}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+    <div className="app-page app-page-reader">
+      <div className="mb-5 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          onClick={() => setShowHeaders((v) => !v)}
-          className="ml-auto min-h-10 rounded-xl px-3 text-xs text-muted-foreground hover:bg-card/50 hover:text-foreground"
+          onClick={() => navigate({ to: "/all" })}
+          className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-transparent px-3 text-sm text-muted-foreground hover:border-border hover:bg-card/60 hover:text-foreground"
         >
-          {showHeaders ? "Hide" : "Show"} full headers
+          <ArrowLeft size={15} /> Retour
         </button>
+        <div className="ml-auto flex items-center gap-2">
+          {!isSent && (
+            <Button asChild size="sm">
+              <Link
+                to="/compose"
+                search={{
+                  to: replyAddress(message.sender),
+                  subject: /^\s*re\s*:/i.test(message.subject || "")
+                    ? message.subject || ""
+                    : `Re: ${message.subject || "Sans objet"}`,
+                  inReplyTo: message.message_id || undefined,
+                }}
+              >
+                <Reply className="size-4" /> <span className="hidden sm:inline">Répondre</span>
+              </Link>
+            </Button>
+          )}
+          {message.folder !== "archive" && message.folder !== "trash" && (
+            <Button variant="outline" size="sm" onClick={archive}>
+              <Archive className="size-4" /> <span className="hidden sm:inline">Archiver</span>
+            </Button>
+          )}
+          <Button variant="outline" size="sm" onClick={trash}>
+            <Trash2 className="size-4" />
+            <span className="hidden sm:inline">
+              {message.folder === "trash" ? "Supprimer" : "Corbeille"}
+            </span>
+          </Button>
+        </div>
       </div>
 
-      {showHeaders && (
-        <pre className="noir-panel mb-3 max-h-64 overflow-auto rounded-2xl p-4 text-xs">
-          {JSON.stringify(
-            {
-              "Message-ID": m.message_id,
-              "In-Reply-To": m.in_reply_to,
-              Thread: m.thread_id,
-              Folder: m.folder,
-              Size: m.size_bytes,
-              Received: m.received_at,
-            },
-            null,
-            2,
-          )}
-        </pre>
-      )}
+      <article className="reader-surface">
+        <header className="px-5 py-6 sm:px-8 sm:py-8 lg:px-10">
+          <div className="flex items-start gap-4 sm:gap-5">
+            <div className="grid size-11 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-brand/90 to-brand-secondary/70 text-sm font-bold text-white shadow-[0_16px_38px_-18px_var(--brand-secondary)] sm:size-13">
+              {(message.sender || "?").trim()[0]?.toUpperCase()}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="page-eyebrow mb-2 before:hidden">
+                {isSent ? "Message envoyé" : "Message reçu"}
+              </div>
+              <h1 className="max-w-5xl font-display text-2xl leading-[1.08] text-white sm:text-4xl lg:text-[2.75rem]">
+                {message.subject || "Sans objet"}
+              </h1>
+              <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+                <span className="font-semibold text-foreground">{message.sender}</span>
+                <span className="text-muted-foreground">
+                  {isSent ? `à ${message.recipient_addr}` : `vers ${address}`}
+                </span>
+                <span className="hidden text-muted-foreground sm:inline">·</span>
+                <time className="text-muted-foreground">
+                  {new Date(message.received_at).toLocaleString("fr-FR", {
+                    dateStyle: "long",
+                    timeStyle: "short",
+                  })}
+                </time>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHeaders((value) => !value)}
+                className="mt-3 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                {showHeaders ? "Masquer les détails" : "Afficher les détails"}
+                <ChevronDown
+                  className={`size-3.5 transition-transform ${showHeaders ? "rotate-180" : ""}`}
+                />
+              </button>
+            </div>
+            <div className="hidden size-11 place-items-center rounded-2xl border border-brand-secondary/15 bg-brand-secondary/6 text-brand-secondary sm:grid">
+              <MailOpen className="size-5" />
+            </div>
+          </div>
 
-      <div className="noir-panel min-h-[240px] rounded-2xl p-5 sm:p-6">
-        {tab === "text" && (
-          <pre className="whitespace-pre-wrap text-sm font-sans">
-            {m.body_text || "(no plain text body)"}
-          </pre>
+          {showHeaders && (
+            <dl className="mt-6 grid gap-3 rounded-2xl border border-border bg-black/15 p-4 text-xs sm:grid-cols-2">
+              {[
+                ["Identifiant", message.message_id || "—"],
+                ["Réponse à", message.in_reply_to || "—"],
+                ["Dossier", FOLDER_LABELS[message.folder] || message.folder],
+                ["Taille", formatBytes(message.size_bytes)],
+              ].map(([label, value]) => (
+                <div key={label} className="min-w-0">
+                  <dt className="text-muted-foreground">{label}</dt>
+                  <dd className="mt-1 truncate font-mono text-foreground" title={value}>
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </header>
+
+        {message.attachments && message.attachments.length > 0 && (
+          <div className="border-t border-border px-5 py-4 sm:px-8 lg:px-10">
+            <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              <Paperclip className="size-3.5" />
+              {message.attachments.length} pièce{message.attachments.length > 1 ? "s" : ""} jointe
+              {message.attachments.length > 1 ? "s" : ""}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {message.attachments.map((attachment: MessageAttachment) => (
+                <Button
+                  key={attachment.id}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadAttachment(attachment)}
+                  title={attachment.mime || "Pièce jointe"}
+                >
+                  <Download className="size-3.5" />
+                  <span className="max-w-64 truncate">{attachment.filename}</span>
+                  <span className="text-muted-foreground">{formatBytes(attachment.size)}</span>
+                </Button>
+              ))}
+            </div>
+          </div>
         )}
-        {tab === "html" &&
-          (m.body_html ? (
+
+        <div className="reader-toolbar flex flex-wrap items-center gap-3 px-4 py-3 sm:px-6">
+          <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
+            <TabsList>
+              <TabsTrigger value="html" disabled={!message.body_html}>
+                Lecture
+              </TabsTrigger>
+              <TabsTrigger value="text">Texte</TabsTrigger>
+              <TabsTrigger value="raw">Source</TabsTrigger>
+            </TabsList>
+          </Tabs>
+          <div className="ml-auto text-xs text-muted-foreground">
+            Les contenus distants sont bloqués pour votre sécurité.
+          </div>
+        </div>
+
+        {tab === "html" && message.body_html && (
+          <div className="reader-paper">
             <iframe
-              title="HTML email (remote content blocked)"
+              title="Contenu HTML de l’e-mail"
               sandbox=""
               referrerPolicy="no-referrer"
-              srcDoc={createIsolatedEmailDocument(m.body_html)}
-              className="w-full min-h-[400px] bg-white rounded"
+              srcDoc={createIsolatedEmailDocument(message.body_html, inlineImages)}
+              className="reader-frame w-full border-0 bg-white"
             />
-          ) : (
-            <div className="text-muted-foreground">No HTML part.</div>
-          ))}
+          </div>
+        )}
+        {tab === "text" && (
+          <div className="reader-paper">
+            <pre className="reader-text whitespace-pre-wrap font-sans">
+              {message.body_text || "Aucune version texte n’est disponible pour ce message."}
+            </pre>
+          </div>
+        )}
         {tab === "raw" && (
-          <pre className="text-xs overflow-auto max-h-[600px]">{displayRawMessage(m.raw)}</pre>
+          <pre className="max-h-[70dvh] min-h-[32rem] overflow-auto bg-[#080b12] p-5 text-xs leading-6 text-slate-300 sm:p-8">
+            {displayRawMessage(message.raw)}
+          </pre>
         )}
-      </div>
+      </article>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <Button
-          variant="outline"
-          onClick={async () => {
-            await supabase.from("messages").update({ seen: !m.seen }).eq("id", id);
-            refetch();
-          }}
-        >
-          Mark as {m.seen ? "unread" : "read"}
-        </Button>
-        {m.folder !== "inbox" && (
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        {["archive", "trash", "spam"].includes(message.folder) && (
           <Button
             variant="outline"
             onClick={async () => {
-              await supabase.from("messages").update({ folder: "inbox" }).eq("id", id);
-              navigate({ to: "/all" });
-            }}
-          >
-            Restore to inbox
-          </Button>
-        )}
-        {m.folder !== "archive" && m.folder !== "trash" && (
-          <Button
-            variant="outline"
-            onClick={async () => {
-              await supabase.from("messages").update({ folder: "archive" }).eq("id", id);
-              navigate({ to: "/all" });
-            }}
-          >
-            Archive
-          </Button>
-        )}
-        {m.folder !== "trash" ? (
-          <Button
-            variant="outline"
-            onClick={async () => {
-              await supabase.from("messages").update({ folder: "trash" }).eq("id", id);
-              navigate({ to: "/all" });
-            }}
-          >
-            Move to trash
-          </Button>
-        ) : (
-          <Button
-            variant="outline"
-            onClick={async () => {
-              if (!window.confirm("Permanently delete this message? This cannot be undone."))
+              const { error } = await supabase
+                .from("messages")
+                .update({ folder: "inbox" })
+                .eq("id", id);
+              if (error) {
+                toast.error("Impossible de restaurer ce message");
                 return;
-              await supabase.from("messages").delete().eq("id", id);
+              }
+              await queryClient.invalidateQueries({ queryKey: ["mail-unread-by-mailbox"] });
               navigate({ to: "/all" });
             }}
           >
-            Delete permanently
+            <Inbox className="size-4" /> Remettre dans la boîte de réception
           </Button>
         )}
         <Link
           to="/m/$id"
-          params={{ id: m.mailbox_id }}
-          className="ml-auto inline-flex min-h-11 items-center gap-2 self-center rounded-xl px-3 text-sm font-semibold text-gold hover:bg-brand-secondary/5"
+          params={{ id: message.mailbox_id }}
+          className="ml-auto inline-flex min-h-11 items-center gap-2 rounded-xl px-3 text-sm font-semibold text-gold hover:bg-brand-secondary/5"
         >
-          Open mailbox <ArrowUpRight className="size-4" />
+          Ouvrir cette adresse <ArrowUpRight className="size-4" />
         </Link>
       </div>
     </div>

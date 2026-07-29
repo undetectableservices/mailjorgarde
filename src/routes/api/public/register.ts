@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
@@ -10,16 +10,14 @@ const RATE_WINDOW_MS = 15 * 60_000;
 const MAX_IP_ATTEMPTS = 8;
 const MAX_USERNAME_ATTEMPTS = 6;
 const MAX_RATE_BUCKETS = 10_000;
+const MAX_JELLYFIN_USERNAME_LENGTH = 128;
+const MAX_JELLYFIN_PASSWORD_LENGTH = 128;
+const INTERNAL_USERNAME_RE = /^[a-z0-9][a-z0-9_-]{1,22}[a-z0-9]$/;
 
 const registration = z
   .object({
-    jellyfinUsername: z
-      .string()
-      .trim()
-      .min(3)
-      .max(24)
-      .regex(/^[a-zA-Z0-9][a-zA-Z0-9_-]{1,22}[a-zA-Z0-9]$/),
-    jellyfinPassword: z.string().min(1).max(128),
+    jellyfinUsername: z.string().trim().min(1).max(MAX_JELLYFIN_USERNAME_LENGTH),
+    jellyfinPassword: z.string().max(MAX_JELLYFIN_PASSWORD_LENGTH),
     mailPassword: z.string().min(12).max(128),
   })
   .strict();
@@ -49,13 +47,40 @@ function json(body: unknown, status: number): Response {
 }
 
 function genericFailure(status = 400): Response {
-  return json({ ok: false, error: "Registration could not be completed." }, status);
+  return json({ ok: false, error: "L’inscription n’a pas pu être finalisée." }, status);
 }
 
 function constantTimeEqual(left: string, right: string): boolean {
-  const a = Buffer.from(left.normalize("NFKC").toLowerCase(), "utf8");
-  const b = Buffer.from(right.normalize("NFKC").toLowerCase(), "utf8");
-  return a.length === b.length && timingSafeEqual(a, b);
+  const digest = (value: string) =>
+    createHash("sha256").update(value.normalize("NFKC").toLowerCase(), "utf8").digest();
+  return timingSafeEqual(digest(left), digest(right));
+}
+
+function jellyfinIdentityKey(username: string): string {
+  return username.normalize("NFKC").toLowerCase();
+}
+
+function hashedInternalUsername(jellyfinName: string, jellyfinId: string): string {
+  const ascii = jellyfinName
+    .normalize("NFKD")
+    .replace(/\p{Mark}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/[-_]{2,}/g, "-")
+    .replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, "");
+  const prefix = (ascii || "user").slice(0, 11).replace(/[^a-z0-9]+$/g, "") || "user";
+  const suffix = createHash("sha256")
+    .update(`jorgardemail:jellyfin:${jellyfinId}`, "utf8")
+    .digest("hex")
+    .slice(0, 12);
+  return `${prefix}-${suffix}`;
+}
+
+function preferredInternalUsername(jellyfinName: string, jellyfinId: string): string {
+  const direct = jellyfinIdentityKey(jellyfinName);
+  return INTERNAL_USERNAME_RE.test(direct)
+    ? direct
+    : hashedInternalUsername(jellyfinName, jellyfinId);
 }
 
 function configuredJellyfin(): { baseUrl: string; apiKey: string } {
@@ -125,6 +150,7 @@ async function fetchJellyfinUsers(baseUrl: string, apiKey: string): Promise<Jell
     headers: {
       accept: "application/json",
       authorization: jellyfinClientAuthorization(apiKey),
+      "x-emby-token": apiKey,
     },
     signal: AbortSignal.timeout(7_000),
   });
@@ -260,19 +286,51 @@ async function jellyfinIdentityAlreadyRegistered(jellyfinId: string): Promise<bo
 }
 
 async function createMailUser(
-  username: string,
   displayName: string,
   password: string,
   jellyfinId: string,
-): Promise<void> {
+): Promise<string> {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const candidates = new Set<string>([
+    preferredInternalUsername(displayName, jellyfinId),
+    hashedInternalUsername(displayName, jellyfinId),
+  ]);
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    candidates.add(hashedInternalUsername(displayName, `${jellyfinId}:${attempt}`));
+  }
+
+  let username = "";
+  for (const candidate of candidates) {
+    if (!INTERNAL_USERNAME_RE.test(candidate)) continue;
+    const { data: existing, error: lookupError } = await supabaseAdmin
+      .from("profiles")
+      .select("user_id")
+      .eq("username", candidate)
+      .limit(1)
+      .maybeSingle();
+    if (lookupError) throw lookupError;
+    if (!existing) {
+      username = candidate;
+      break;
+    }
+  }
+  if (!username) throw new Error("Could not allocate a safe internal username");
+  const normalizedDisplayName = Array.from(displayName.normalize("NFKC"))
+    .map((character) => {
+      const codePoint = character.codePointAt(0) ?? 0;
+      return codePoint < 32 || codePoint === 127 ? " " : character;
+    })
+    .join("")
+    .trim();
+  const safeDisplayName = Array.from(normalizedDisplayName).slice(0, 80).join("");
+
   const { data, error } = await supabaseAdmin.auth.admin.createUser({
     email: `${username}${USERNAME_EMAIL_SUFFIX}`,
     password,
     email_confirm: true,
     user_metadata: {
       username,
-      display_name: displayName.slice(0, 80),
+      display_name: safeDisplayName || username,
     },
     app_metadata: {
       jorgarde_identity_source: "jellyfin",
@@ -280,6 +338,20 @@ async function createMailUser(
     },
   });
   if (error || !data.user) throw error || new Error("Auth did not return the created user");
+
+  const { data: profile, error: profileError } = await supabaseAdmin
+    .from("profiles")
+    .select("username")
+    .eq("user_id", data.user.id)
+    .maybeSingle();
+  if (profileError || !profile || !INTERNAL_USERNAME_RE.test(profile.username)) {
+    const { error: cleanupError } = await supabaseAdmin.auth.admin.deleteUser(data.user.id);
+    if (cleanupError) {
+      console.error("[registration] could not roll back incomplete auth user", cleanupError);
+    }
+    throw profileError || new Error("The created user profile is invalid");
+  }
+  return profile.username;
 }
 
 async function assertAdministratorAlreadyProvisioned(): Promise<void> {
@@ -311,12 +383,12 @@ async function handleRegistration(request: Request): Promise<Response> {
     return finish(genericFailure());
   }
 
-  const username = submitted.jellyfinUsername.toLowerCase();
+  const identityKey = jellyfinIdentityKey(submitted.jellyfinUsername);
   const now = Date.now();
   pruneRateLimits(now);
   const ipKey = `ip:${requestIdentity(request)}`;
   const secret = process.env.INBOUND_WEBHOOK_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-  const userKey = `user:${createHmac("sha256", secret).update(username).digest("hex")}`;
+  const userKey = `user:${createHmac("sha256", secret).update(identityKey).digest("hex")}`;
   const withinIpLimit = consumeRateLimit(ipKey, MAX_IP_ATTEMPTS, now);
   const withinUserLimit = consumeRateLimit(userKey, MAX_USERNAME_ATTEMPTS, now);
   if (!withinIpLimit || !withinUserLimit) {
@@ -340,7 +412,7 @@ async function handleRegistration(request: Request): Promise<Response> {
       baseUrl,
       typeof matched?.Name === "string" ? matched.Name : submitted.jellyfinUsername,
       submitted.jellyfinPassword,
-      createHmac("sha256", secret).update(username).digest("hex").slice(0, 32),
+      createHmac("sha256", secret).update(identityKey).digest("hex").slice(0, 32),
     );
     const token = typeof authenticated?.AccessToken === "string" ? authenticated.AccessToken : "";
     if (token) await revokeJellyfinToken(baseUrl, token);
@@ -368,12 +440,15 @@ async function handleRegistration(request: Request): Promise<Response> {
       // administrator. The database trigger independently refuses to infer
       // admin rights from creation order.
       await assertAdministratorAlreadyProvisioned();
-      await createMailUser(username, String(matched.Name), submitted.mailPassword, jellyfinId);
+      const internalUsername = await createMailUser(
+        String(matched.Name),
+        submitted.mailPassword,
+        jellyfinId,
+      );
+      return finish(json({ ok: true, username: internalUsername }, 201));
     } finally {
       registrationLocks.delete(jellyfinId);
     }
-
-    return finish(json({ ok: true }, 201));
   } catch (error) {
     console.error("[registration] Jellyfin-gated registration failed", error);
     return finish(genericFailure());

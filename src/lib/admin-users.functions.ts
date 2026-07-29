@@ -11,7 +11,7 @@ const username = z
   .trim()
   .toLowerCase()
   .regex(/^[a-z0-9][a-z0-9_-]{1,22}[a-z0-9]$/, {
-    message: "Username must be 3–24 characters using letters, digits, _ or -",
+    message: "L’identifiant doit contenir 3 à 24 lettres, chiffres, _ ou -",
   });
 const password = z.string().min(12).max(128);
 
@@ -26,7 +26,7 @@ async function assertAdmin(context: AuthedContext): Promise<void> {
     _role: "admin",
   });
   if (error) throw new Error(error.message);
-  if (!data) throw new Error("Forbidden");
+  if (!data) throw new Error("Accès administrateur requis");
 }
 
 export const createLocalUser = createServerFn({ method: "POST" })
@@ -51,7 +51,8 @@ export const createLocalUser = createServerFn({ method: "POST" })
       },
     });
     if (error) throw new Error(error.message);
-    if (!created.user) throw new Error("The authentication service did not return the new user");
+    if (!created.user)
+      throw new Error("Le service d’authentification n’a pas renvoyé le compte créé");
     return { id: created.user.id, username: data.username };
   });
 

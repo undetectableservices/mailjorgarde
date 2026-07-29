@@ -1,5 +1,5 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
-import { ArrowRight, KeyRound, MessageCircleMore, Radio, ShieldCheck } from "lucide-react";
+import { ArrowRight, KeyRound, Mail, MessageCircleMore, ShieldCheck, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
@@ -17,10 +17,10 @@ export const Route = createFileRoute("/auth")({
   validateSearch: search,
   head: () => ({
     meta: [
-      { title: "Sign in — JorgardeMail" },
+      { title: "Connexion — JorgardeMail" },
       {
         name: "description",
-        content: "Sign in to JorgardeMail with just a username and password.",
+        content: "Accédez à votre espace JorgardeMail.",
       },
     ],
   }),
@@ -47,7 +47,14 @@ function AuthPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const safeNext = next?.startsWith("/") && !next.startsWith("//") ? next : "/all";
+  const unsafeNextCharacter = next
+    ? [...next].some((character) => {
+        const code = character.charCodeAt(0);
+        return character === "\\" || code < 32 || code === 127;
+      })
+    : true;
+  const safeNext =
+    next?.startsWith("/") && !next.startsWith("//") && !unsafeNextCharacter ? next : "/all";
 
   const completeSignIn = async (uname: string, submittedPassword: string) => {
     const email = usernameToEmail(uname);
@@ -55,7 +62,7 @@ function AuthPage() {
       email,
       password: submittedPassword,
     });
-    if (error || !data.session) throw new Error("Invalid username or password");
+    if (error || !data.session) throw new Error("Identifiant ou mot de passe incorrect");
 
     // The auth provider lives inside the protected route tree. A client-side
     // transition can therefore mount a fresh provider before it observes the
@@ -69,11 +76,11 @@ function AuthPage() {
     event.preventDefault();
     const uname = username.trim().toLowerCase();
     if (!USERNAME_RE.test(uname)) {
-      toast.error("Username must be 3–24 chars: letters, digits, _ or -");
+      toast.error("L’identifiant doit contenir 3 à 24 caractères : lettres, chiffres, _ ou -");
       return;
     }
     if (password.length < 6) {
-      toast.error("Password must be at least 6 characters");
+      toast.error("Le mot de passe doit contenir au moins 6 caractères");
       return;
     }
 
@@ -81,7 +88,7 @@ function AuthPage() {
     try {
       await completeSignIn(uname, password);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Something went wrong");
+      toast.error(error instanceof Error ? error.message : "Une erreur est survenue");
     } finally {
       setBusy(false);
     }
@@ -90,21 +97,20 @@ function AuthPage() {
   const register = async (event: React.FormEvent) => {
     event.preventDefault();
     const exactJellyfinName = jellyfinUsername.trim();
-    const uname = exactJellyfinName.toLowerCase();
-    if (!USERNAME_RE.test(uname)) {
-      toast.error("Jellyfin username must be 3–24 chars: letters, digits, _ or -");
+    if (!exactJellyfinName || exactJellyfinName.length > 128) {
+      toast.error("Saisissez votre identifiant Jellyfin (128 caractères maximum)");
       return;
     }
-    if (!jellyfinPassword || jellyfinPassword.length > 128) {
-      toast.error("Enter your Jellyfin password");
+    if (jellyfinPassword.length > 128) {
+      toast.error("Le mot de passe Jellyfin ne peut pas dépasser 128 caractères");
       return;
     }
     if (mailPassword.length < 12 || mailPassword.length > 128) {
-      toast.error("JorgardeMail password must be 12–128 characters");
+      toast.error("Le mot de passe JorgardeMail doit contenir 12 à 128 caractères");
       return;
     }
     if (mailPassword !== confirmPassword) {
-      toast.error("JorgardeMail passwords do not match");
+      toast.error("Les mots de passe JorgardeMail ne correspondent pas");
       return;
     }
 
@@ -119,12 +125,21 @@ function AuthPage() {
           mailPassword,
         }),
       });
+      const result = (await response.json().catch(() => null)) as {
+        ok?: unknown;
+        username?: unknown;
+      } | null;
       if (!response.ok) {
         throw new Error(
           response.status === 429
-            ? "Too many registration attempts. Wait 15 minutes and try again."
-            : "Registration could not be completed. Check your Jellyfin name and password.",
+            ? "Trop de tentatives. Patientez 15 minutes avant de réessayer."
+            : "Inscription impossible. Vérifiez votre identifiant et votre mot de passe Jellyfin.",
         );
+      }
+      const internalUsername =
+        typeof result?.username === "string" ? result.username.toLowerCase() : "";
+      if (!USERNAME_RE.test(internalUsername)) {
+        throw new Error("Le compte a été créé, mais son identifiant interne est invalide");
       }
 
       // Clear both credentials from React state before the new, separate mail
@@ -134,15 +149,17 @@ function AuthPage() {
       setMailPassword("");
       setConfirmPassword("");
       try {
-        await completeSignIn(uname, newMailPassword);
+        await completeSignIn(internalUsername, newMailPassword);
       } catch {
         setMode("signin");
-        setUsername(uname);
+        setUsername(internalUsername);
         setPassword("");
-        toast.success("Account created. Sign in with your new JorgardeMail password.");
+        toast.success(`Compte créé. Votre identifiant JorgardeMail est @${internalUsername}.`);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Registration could not be completed");
+      toast.error(
+        error instanceof Error ? error.message : "L’inscription n’a pas pu être finalisée",
+      );
     } finally {
       setBusy(false);
     }
@@ -162,40 +179,65 @@ function AuthPage() {
       <section className="relative hidden min-h-screen flex-col justify-between overflow-hidden p-12 lg:flex xl:p-16">
         <BrandLockup />
 
-        <div className="relative z-10 max-w-2xl py-16">
+        <div className="relative z-10 max-w-[44rem] py-12">
           <div className="premium-badge">
-            <Radio className="size-3.5" /> Local-first communications
+            <Sparkles className="size-3.5" /> Une nouvelle façon de communiquer
           </div>
-          <h1 className="mt-7 max-w-xl font-display text-[clamp(3.4rem,6vw,6.4rem)] leading-[0.88] tracking-[-0.075em] text-white">
-            Your private inbox, <span className="text-gold">reimagined.</span>
+          <h1 className="mt-7 max-w-2xl font-display text-[clamp(3.6rem,6.4vw,6.8rem)] leading-[0.86] tracking-[-0.078em] text-white">
+            Votre messagerie. <span className="text-gold">Sans compromis.</span>
           </h1>
-          <p className="mt-7 max-w-lg text-base leading-7 text-muted-foreground xl:text-lg xl:leading-8">
-            Internet mail at the edge. Direct conversations on your own node. Nothing important
-            needs to leave your infrastructure.
+          <p className="mt-7 max-w-xl text-base leading-7 text-muted-foreground xl:text-lg xl:leading-8">
+            E-mails et conversations réunis dans une expérience rapide, élégante et pensée pour
+            rester agréable chaque jour.
           </p>
 
-          <div className="mt-10 grid max-w-xl gap-3 sm:grid-cols-3">
+          <div className="auth-showcase mt-10 max-w-2xl rounded-[1.65rem] p-3">
+            <div className="flex items-center justify-between px-3 pb-3 pt-1">
+              <div>
+                <div className="text-[0.66rem] font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                  Aperçu
+                </div>
+                <div className="mt-1 font-display text-lg text-white">Boîte de réception</div>
+              </div>
+              <div className="flex items-center gap-2 rounded-full border border-emerald-300/15 bg-emerald-300/8 px-2.5 py-1 text-[0.65rem] font-semibold text-emerald-200">
+                <span className="size-1.5 rounded-full bg-emerald-300 shadow-[0_0_12px_#6ee7b7]" />À
+                jour
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              {[
+                ["A", "Alexandre", "Les nouveaux visuels sont prêts", "Maintenant"],
+                ["M", "Mélanie", "On se retrouve à 19 h ?", "12 min"],
+                ["J", "Jorgarde", "Votre récapitulatif de la semaine", "Hier"],
+              ].map(([initial, sender, subject, time], index) => (
+                <div
+                  key={sender}
+                  className={`auth-showcase-row flex items-center gap-3 rounded-2xl px-3.5 py-3 ${index === 0 ? "is-highlighted" : ""}`}
+                >
+                  <div className="grid size-9 shrink-0 place-items-center rounded-xl bg-white/[0.06] text-xs font-bold text-white ring-1 ring-white/8">
+                    {initial}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-semibold text-white">{sender}</span>
+                      {index === 0 && <span className="size-1.5 rounded-full bg-brand-secondary" />}
+                    </div>
+                    <div className="mt-0.5 truncate text-xs text-muted-foreground">{subject}</div>
+                  </div>
+                  <span className="text-[0.65rem] text-muted-foreground">{time}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 flex flex-wrap gap-2">
             {[
-              {
-                icon: ShieldCheck,
-                title: "Self-hosted",
-                detail: "Your server, your data",
-              },
-              {
-                icon: MessageCircleMore,
-                title: "Private DMs",
-                detail: "Local conversations",
-              },
-              {
-                icon: KeyRound,
-                title: "Jellyfin gated",
-                detail: "Verified membership",
-              },
-            ].map(({ icon: Icon, title, detail }) => (
-              <div key={title} className="auth-feature rounded-2xl p-4">
-                <Icon className="size-5 text-brand-secondary" />
-                <div className="mt-4 text-sm font-semibold text-foreground">{title}</div>
-                <div className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</div>
+              { icon: Mail, label: "E-mails" },
+              { icon: MessageCircleMore, label: "Messages directs" },
+              { icon: KeyRound, label: "Accès Jellyfin" },
+            ].map(({ icon: Icon, label }) => (
+              <div key={label} className="auth-capability">
+                <Icon className="size-3.5 text-brand-secondary" /> {label}
               </div>
             ))}
           </div>
@@ -203,7 +245,7 @@ function AuthPage() {
 
         <div className="flex items-center gap-3 text-xs text-muted-foreground">
           <span className="signal-dot size-1.5 rounded-full" />
-          Private node online · encrypted transport through WireGuard
+          Service disponible · accès protégé par WireGuard
         </div>
       </section>
 
@@ -217,15 +259,15 @@ function AuthPage() {
             <div className="flex items-start justify-between gap-5">
               <div>
                 <div className="page-eyebrow before:hidden">
-                  {mode === "signin" ? "Secure access" : "Verified registration"}
+                  {mode === "signin" ? "Accès sécurisé" : "Inscription vérifiée"}
                 </div>
                 <h2 className="font-display text-3xl text-foreground sm:text-4xl">
-                  {mode === "signin" ? "Welcome back" : "Join the node"}
+                  {mode === "signin" ? "Heureux de vous revoir" : "Créer votre accès"}
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
                   {mode === "signin"
-                    ? "Enter your local JorgardeMail credentials."
-                    : "Confirm your Jellyfin identity, then create a separate mail password."}
+                    ? "Retrouvez votre messagerie et vos conversations."
+                    : "Confirmez votre compte Jellyfin puis choisissez un mot de passe dédié."}
                 </p>
               </div>
               <BrandMark className="hidden size-12 sm:block" />
@@ -238,10 +280,10 @@ function AuthPage() {
             >
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="signin" disabled={busy}>
-                  Sign in
+                  Connexion
                 </TabsTrigger>
                 <TabsTrigger value="register" disabled={busy}>
-                  Register
+                  Inscription
                 </TabsTrigger>
               </TabsList>
             </Tabs>
@@ -249,7 +291,7 @@ function AuthPage() {
             {mode === "signin" ? (
               <form onSubmit={submit} className="mt-6 space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="signin-username">Username</Label>
+                  <Label htmlFor="signin-username">Identifiant</Label>
                   <Input
                     id="signin-username"
                     autoFocus
@@ -262,11 +304,11 @@ function AuthPage() {
                     maxLength={24}
                     value={username}
                     onChange={(event) => setUsername(event.target.value.toLowerCase())}
-                    placeholder="yourname"
+                    placeholder="votre identifiant"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="signin-password">Password</Label>
+                  <Label htmlFor="signin-password">Mot de passe</Label>
                   <Input
                     id="signin-password"
                     type="password"
@@ -282,11 +324,11 @@ function AuthPage() {
                   {busy ? (
                     <>
                       <span className="size-4 animate-spin rounded-full border-2 border-white/30 border-t-white motion-reduce:animate-none" />
-                      Signing in
+                      Connexion…
                     </>
                   ) : (
                     <>
-                      Enter workspace <ArrowRight />
+                      Accéder à JorgardeMail <ArrowRight />
                     </>
                   )}
                 </Button>
@@ -295,7 +337,7 @@ function AuthPage() {
               <form onSubmit={register} className="mt-6 space-y-4">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="register-jellyfin-name">Jellyfin username</Label>
+                    <Label htmlFor="register-jellyfin-name">Identifiant Jellyfin</Label>
                     <Input
                       id="register-jellyfin-name"
                       autoFocus
@@ -304,28 +346,27 @@ function AuthPage() {
                       spellCheck={false}
                       autoComplete="username"
                       required
-                      minLength={3}
-                      maxLength={24}
+                      maxLength={128}
                       value={jellyfinUsername}
                       onChange={(event) => setJellyfinUsername(event.target.value)}
-                      placeholder="Exact account name"
+                      placeholder="Nom exact du compte"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="register-jellyfin-password">Jellyfin password</Label>
+                    <Label htmlFor="register-jellyfin-password">Mot de passe Jellyfin</Label>
                     <Input
                       id="register-jellyfin-password"
                       type="password"
                       autoComplete="current-password"
-                      required
                       maxLength={128}
                       value={jellyfinPassword}
                       onChange={(event) => setJellyfinPassword(event.target.value)}
+                      placeholder="Peut être vide"
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="register-mail-password">New JorgardeMail password</Label>
+                  <Label htmlFor="register-mail-password">Nouveau mot de passe JorgardeMail</Label>
                   <Input
                     id="register-mail-password"
                     type="password"
@@ -335,11 +376,11 @@ function AuthPage() {
                     maxLength={128}
                     value={mailPassword}
                     onChange={(event) => setMailPassword(event.target.value)}
-                    placeholder="12 characters minimum"
+                    placeholder="12 caractères minimum"
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="register-confirm-password">Confirm mail password</Label>
+                  <Label htmlFor="register-confirm-password">Confirmer le mot de passe</Label>
                   <Input
                     id="register-confirm-password"
                     type="password"
@@ -355,11 +396,11 @@ function AuthPage() {
                   {busy ? (
                     <>
                       <span className="size-4 animate-spin rounded-full border-2 border-white/30 border-t-white motion-reduce:animate-none" />
-                      Verifying identity
+                      Vérification…
                     </>
                   ) : (
                     <>
-                      Verify & create account <ArrowRight />
+                      Vérifier et créer le compte <ArrowRight />
                     </>
                   )}
                 </Button>
@@ -370,8 +411,8 @@ function AuthPage() {
               <ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand-secondary" />
               <p>
                 {mode === "register"
-                  ? "Your Jellyfin password is checked once and never stored. The API key and private user list stay on this server."
-                  : "Authentication happens against your private JorgardeMail server. No social login or tracking scripts."}
+                  ? "Votre mot de passe Jellyfin est vérifié une seule fois et n’est jamais conservé."
+                  : "Votre session reste réservée aux membres autorisés de votre espace JorgardeMail."}
               </p>
             </div>
           </div>

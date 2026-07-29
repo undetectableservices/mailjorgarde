@@ -11,14 +11,14 @@ function configuredJellyfin() {
   const rawUrl = (process.env.JELLYFIN_URL || "").trim();
   const apiKey = (process.env.JELLYFIN_API_KEY || "").trim();
   if (!rawUrl || !/^[a-zA-Z0-9._~-]{16,256}$/.test(apiKey)) {
-    fail("JELLYFIN_URL or JELLYFIN_API_KEY is missing or invalid");
+    fail("JELLYFIN_URL ou JELLYFIN_API_KEY est absent ou invalide");
   }
 
   let url;
   try {
     url = new URL(rawUrl);
   } catch {
-    fail("JELLYFIN_URL is not a valid URL");
+    fail("JELLYFIN_URL n'est pas une adresse valide");
   }
   if (
     !["http:", "https:"].includes(url.protocol) ||
@@ -27,15 +27,15 @@ function configuredJellyfin() {
     url.search ||
     url.hash
   ) {
-    fail("JELLYFIN_URL must be a plain HTTP(S) server URL");
+    fail("JELLYFIN_URL doit être une adresse HTTP(S) de serveur sans paramètres");
   }
   return { baseUrl: url.toString().replace(/\/$/, ""), apiKey };
 }
 
 async function readBounded(response) {
   const declared = response.headers.get("content-length");
-  if (declared && Number(declared) > MAX_RESPONSE_BYTES) fail("response exceeded 1 MiB");
-  if (!response.body) fail("server returned an empty response");
+  if (declared && Number(declared) > MAX_RESPONSE_BYTES) fail("la réponse dépasse 1 Mio");
+  if (!response.body) fail("le serveur a renvoyé une réponse vide");
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -48,7 +48,7 @@ async function readBounded(response) {
       size += value.byteLength;
       if (size > MAX_RESPONSE_BYTES) {
         await reader.cancel("response too large").catch(() => {});
-        fail("response exceeded 1 MiB");
+        fail("la réponse dépasse 1 Mio");
       }
       raw += decoder.decode(value, { stream: true });
     }
@@ -67,23 +67,24 @@ try {
       authorization:
         `MediaBrowser Client="JorgardeMail", Device="JorgardeMail Server", ` +
         `DeviceId="jorgardemail-server", Version="1.0.0", Token="${apiKey}"`,
+      "x-emby-token": apiKey,
     },
     signal: AbortSignal.timeout(7_000),
   });
 } catch {
-  fail("Jellyfin is unreachable from the web container");
+  fail("Jellyfin est inaccessible depuis le service web");
 }
-if (!response.ok) fail(`Jellyfin rejected the configured API key (HTTP ${response.status})`);
+if (!response.ok) fail(`Jellyfin a refusé la clé API configurée (HTTP ${response.status})`);
 
 let users;
 try {
   users = JSON.parse(await readBounded(response));
 } catch {
-  fail("Jellyfin returned invalid JSON");
+  fail("Jellyfin a renvoyé un JSON invalide");
 }
-if (!Array.isArray(users)) fail("Jellyfin returned an invalid user list");
+if (!Array.isArray(users)) fail("Jellyfin a renvoyé une liste d'utilisateurs invalide");
 if (!users.some((user) => typeof user?.Id === "string" && typeof user?.Name === "string")) {
-  fail("Jellyfin did not return any usable user accounts");
+  fail("Jellyfin n'a renvoyé aucun compte utilisateur exploitable");
 }
 
-process.stdout.write("Jellyfin registration gate verified\n");
+process.stdout.write("Validation des inscriptions Jellyfin réussie\n");

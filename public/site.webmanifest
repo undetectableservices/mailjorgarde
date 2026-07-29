@@ -2,7 +2,7 @@
   "id": "/",
   "name": "JorgardeMail",
   "short_name": "Jorgarde",
-  "description": "Private multi-domain inbound email and internal messaging.",
+  "description": "Messagerie multi-domaine et conversations entre membres.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

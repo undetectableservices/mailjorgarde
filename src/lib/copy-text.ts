@@ -19,5 +19,5 @@ export async function copyText(value: string): Promise<void> {
   textarea.select();
   const copied = document.execCommand("copy");
   textarea.remove();
-  if (!copied) throw new Error("Clipboard access is unavailable in this browser");
+  if (!copied) throw new Error("Le presse-papiers n’est pas accessible dans ce navigateur");
 }

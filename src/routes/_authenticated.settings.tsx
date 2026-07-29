@@ -21,8 +21,8 @@ import { KeyRound, UserRound } from "lucide-react";
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({
     meta: [
-      { title: "Account settings — JorgardeMail" },
-      { name: "description", content: "Manage your local JorgardeMail account." },
+      { title: "Préférences — JorgardeMail" },
+      { name: "description", content: "Gérez votre compte JorgardeMail." },
     ],
   }),
   component: AccountSettings,
@@ -31,7 +31,6 @@ export const Route = createFileRoute("/_authenticated/settings")({
 function AccountSettings() {
   const { user } = useAuth();
   const [displayName, setDisplayName] = useState("");
-  const [dmPrivacy, setDmPrivacy] = useState<"anyone" | "contacts" | "nobody">("anyone");
   const [density, setDensity] = useState<"cozy" | "compact">("cozy");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -49,70 +48,74 @@ function AccountSettings() {
   useEffect(() => {
     if (!profile) return;
     setDisplayName(profile.display_name ?? "");
-    setDmPrivacy(profile.dm_privacy as typeof dmPrivacy);
     setDensity(profile.density as typeof density);
   }, [profile]);
 
   const saveProfile = useMutation({
     mutationFn: async () => {
-      if (!user) throw new Error("You are not signed in");
+      if (!user) throw new Error("Votre session a expiré");
       const cleanName = displayName.trim();
-      if (cleanName.length > 100) throw new Error("Display name must be 100 characters or fewer");
+      if (cleanName.length > 100)
+        throw new Error("Le nom affiché ne peut pas dépasser 100 caractères");
       const { error } = await supabase
         .from("profiles")
-        .update({ display_name: cleanName || null, dm_privacy: dmPrivacy, density })
+        .update({ display_name: cleanName || null, density })
         .eq("user_id", user.id);
       if (error) throw error;
     },
     onSuccess: async () => {
       await refetch();
-      toast.success("Account preferences saved");
+      toast.success("Préférences enregistrées");
     },
     onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Could not save account preferences"),
+      toast.error(
+        error instanceof Error ? error.message : "Impossible d’enregistrer les préférences",
+      ),
   });
 
   const changePassword = useMutation({
     mutationFn: async () => {
       if (password.length < 12 || password.length > 128) {
-        throw new Error("Password must be 12–128 characters");
+        throw new Error("Le mot de passe doit contenir 12 à 128 caractères");
       }
-      if (password !== confirmPassword) throw new Error("Passwords do not match");
+      if (password !== confirmPassword) throw new Error("Les mots de passe ne correspondent pas");
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
     },
     onSuccess: () => {
       setPassword("");
       setConfirmPassword("");
-      toast.success("Password changed");
+      toast.success("Mot de passe modifié");
     },
     onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Could not change password"),
+      toast.error(
+        error instanceof Error ? error.message : "Impossible de modifier le mot de passe",
+      ),
   });
 
   return (
     <div className="app-page app-page-narrow">
       <PageHeader
-        eyebrow="Personal controls"
-        title="Account settings"
-        description="Tune your identity, privacy, and local credentials. Your account and direct messages stay on this server."
+        eyebrow="Votre espace"
+        title="Préférences"
+        description="Personnalisez votre identité, l’affichage de vos messages et vos accès."
       />
 
-      <section className="noir-panel space-y-4 rounded-2xl p-5 sm:p-6">
+      <section className="noir-panel space-y-5 rounded-3xl p-5 sm:p-7">
         <div className="flex items-center gap-3">
           <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-brand-secondary ring-1 ring-primary/15">
             <UserRound className="size-5" />
           </div>
           <div>
-            <h2 className="font-display text-2xl">Profile</h2>
+            <h2 className="font-display text-2xl">Profil</h2>
             <p className="text-xs text-muted-foreground">
-              Username:{" "}
+              Identifiant :{" "}
               <span className="font-mono text-foreground">@{profile?.username ?? "…"}</span>
             </p>
           </div>
         </div>
         <div>
-          <Label htmlFor="account-display-name">Display name</Label>
+          <Label htmlFor="account-display-name">Nom affiché</Label>
           <Input
             id="account-display-name"
             maxLength={100}
@@ -120,37 +123,17 @@ function AccountSettings() {
             onChange={(event) => setDisplayName(event.target.value)}
           />
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <Label>Who may start a DM</Label>
-            <Select
-              value={dmPrivacy}
-              onValueChange={(value) => setDmPrivacy(value as typeof dmPrivacy)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="anyone">Any local user</SelectItem>
-                <SelectItem value="nobody">Nobody new</SelectItem>
-                <SelectItem value="contacts" disabled>
-                  Contacts (not available yet)
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label>Message density</Label>
-            <Select value={density} onValueChange={(value) => setDensity(value as typeof density)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="cozy">Cozy</SelectItem>
-                <SelectItem value="compact">Compact</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        <div className="max-w-sm">
+          <Label>Densité des messages</Label>
+          <Select value={density} onValueChange={(value) => setDensity(value as typeof density)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="cozy">Confortable</SelectItem>
+              <SelectItem value="compact">Compacte</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <Button
           type="button"
@@ -158,25 +141,26 @@ function AccountSettings() {
           disabled={!profile || saveProfile.isPending}
           onClick={() => saveProfile.mutate()}
         >
-          {saveProfile.isPending ? "Saving…" : "Save preferences"}
+          {saveProfile.isPending ? "Enregistrement…" : "Enregistrer les préférences"}
         </Button>
       </section>
 
-      <section className="noir-panel mt-4 space-y-4 rounded-2xl p-5 sm:p-6">
+      <section className="noir-panel mt-4 space-y-5 rounded-3xl p-5 sm:p-7">
         <div className="flex items-center gap-3">
           <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-brand-secondary ring-1 ring-primary/15">
             <KeyRound className="size-5" />
           </div>
           <div>
-            <h2 className="font-display text-2xl">Change password</h2>
+            <h2 className="font-display text-2xl">Modifier le mot de passe</h2>
             <p className="text-xs text-muted-foreground">
-              Use at least 12 characters. Your administrator cannot see this password.
+              Utilisez au moins 12 caractères. Votre administrateur ne peut pas consulter ce mot de
+              passe.
             </p>
           </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
-            <Label htmlFor="account-new-password">New password</Label>
+            <Label htmlFor="account-new-password">Nouveau mot de passe</Label>
             <Input
               id="account-new-password"
               type="password"
@@ -188,7 +172,7 @@ function AccountSettings() {
             />
           </div>
           <div>
-            <Label htmlFor="account-confirm-password">Confirm password</Label>
+            <Label htmlFor="account-confirm-password">Confirmer le mot de passe</Label>
             <Input
               id="account-confirm-password"
               type="password"
@@ -206,7 +190,7 @@ function AccountSettings() {
           disabled={!password || changePassword.isPending}
           onClick={() => changePassword.mutate()}
         >
-          {changePassword.isPending ? "Changing…" : "Change password"}
+          {changePassword.isPending ? "Modification…" : "Modifier le mot de passe"}
         </Button>
       </section>
     </div>

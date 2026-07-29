@@ -2,7 +2,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export function ListSkeleton({ rows = 5 }: { rows?: number }) {
   return (
-    <div aria-label="Loading content" aria-busy="true" className="divide-y divide-border">
+    <div aria-label="Chargement du contenu" aria-busy="true" className="divide-y divide-border">
       {Array.from({ length: rows }, (_, index) => (
         <div key={index} className="flex min-h-[4.6rem] items-center gap-4 px-5 py-3.5">
           <Skeleton className="size-2 shrink-0 rounded-full" />
@@ -14,7 +14,7 @@ export function ListSkeleton({ rows = 5 }: { rows?: number }) {
           <Skeleton className="h-3 w-12" />
         </div>
       ))}
-      <span className="sr-only">Loading…</span>
+      <span className="sr-only">Chargement…</span>
     </div>
   );
 }

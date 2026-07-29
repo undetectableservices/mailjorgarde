@@ -14,13 +14,16 @@ import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated.admin'
 import { Route as AuthenticatedAllRouteImport } from './routes/_authenticated.all'
+import { Route as AuthenticatedComposeRouteImport } from './routes/_authenticated.compose'
 import { Route as AuthenticatedDmRouteImport } from './routes/_authenticated.dm'
 import { Route as AuthenticatedMailboxesRouteImport } from './routes/_authenticated.mailboxes'
 import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated.settings'
 import { Route as ApiHealthzRouteImport } from './routes/api/healthz'
+import { Route as AuthenticatedDmIndexRouteImport } from './routes/_authenticated.dm.index'
 import { Route as AuthenticatedDmIdRouteImport } from './routes/_authenticated.dm.$id'
 import { Route as AuthenticatedMIdRouteImport } from './routes/_authenticated.m.$id'
 import { Route as AuthenticatedMsgIdRouteImport } from './routes/_authenticated.msg.$id'
+import { Route as ApiInternalOutboundHealthRouteImport } from './routes/api/internal/outbound-health'
 import { Route as ApiPublicInboundRouteImport } from './routes/api/public/inbound'
 import { Route as ApiPublicRegisterRouteImport } from './routes/api/public/register'
 
@@ -48,6 +51,11 @@ const AuthenticatedAllRoute = AuthenticatedAllRouteImport.update({
   path: '/all',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const AuthenticatedComposeRoute = AuthenticatedComposeRouteImport.update({
+  id: '/compose',
+  path: '/compose',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
 const AuthenticatedDmRoute = AuthenticatedDmRouteImport.update({
   id: '/dm',
   path: '/dm',
@@ -68,6 +76,11 @@ const ApiHealthzRoute = ApiHealthzRouteImport.update({
   path: '/api/healthz',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthenticatedDmIndexRoute = AuthenticatedDmIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AuthenticatedDmRoute,
+} as any)
 const AuthenticatedDmIdRoute = AuthenticatedDmIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -83,6 +96,12 @@ const AuthenticatedMsgIdRoute = AuthenticatedMsgIdRouteImport.update({
   path: '/msg/$id',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
+const ApiInternalOutboundHealthRoute =
+  ApiInternalOutboundHealthRouteImport.update({
+    id: '/api/internal/outbound-health',
+    path: '/api/internal/outbound-health',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicInboundRoute = ApiPublicInboundRouteImport.update({
   id: '/api/public/inbound',
   path: '/api/public/inbound',
@@ -99,6 +118,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/all': typeof AuthenticatedAllRoute
+  '/compose': typeof AuthenticatedComposeRoute
   '/dm': typeof AuthenticatedDmRouteWithChildren
   '/mailboxes': typeof AuthenticatedMailboxesRoute
   '/settings': typeof AuthenticatedSettingsRoute
@@ -106,23 +126,27 @@ export interface FileRoutesByFullPath {
   '/dm/$id': typeof AuthenticatedDmIdRoute
   '/m/$id': typeof AuthenticatedMIdRoute
   '/msg/$id': typeof AuthenticatedMsgIdRoute
+  '/api/internal/outbound-health': typeof ApiInternalOutboundHealthRoute
   '/api/public/inbound': typeof ApiPublicInboundRoute
   '/api/public/register': typeof ApiPublicRegisterRoute
+  '/dm/': typeof AuthenticatedDmIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/all': typeof AuthenticatedAllRoute
-  '/dm': typeof AuthenticatedDmRouteWithChildren
+  '/compose': typeof AuthenticatedComposeRoute
   '/mailboxes': typeof AuthenticatedMailboxesRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/api/healthz': typeof ApiHealthzRoute
   '/dm/$id': typeof AuthenticatedDmIdRoute
   '/m/$id': typeof AuthenticatedMIdRoute
   '/msg/$id': typeof AuthenticatedMsgIdRoute
+  '/api/internal/outbound-health': typeof ApiInternalOutboundHealthRoute
   '/api/public/inbound': typeof ApiPublicInboundRoute
   '/api/public/register': typeof ApiPublicRegisterRoute
+  '/dm': typeof AuthenticatedDmIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -131,6 +155,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/all': typeof AuthenticatedAllRoute
+  '/_authenticated/compose': typeof AuthenticatedComposeRoute
   '/_authenticated/dm': typeof AuthenticatedDmRouteWithChildren
   '/_authenticated/mailboxes': typeof AuthenticatedMailboxesRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
@@ -138,8 +163,10 @@ export interface FileRoutesById {
   '/_authenticated/dm/$id': typeof AuthenticatedDmIdRoute
   '/_authenticated/m/$id': typeof AuthenticatedMIdRoute
   '/_authenticated/msg/$id': typeof AuthenticatedMsgIdRoute
+  '/api/internal/outbound-health': typeof ApiInternalOutboundHealthRoute
   '/api/public/inbound': typeof ApiPublicInboundRoute
   '/api/public/register': typeof ApiPublicRegisterRoute
+  '/_authenticated/dm/': typeof AuthenticatedDmIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -148,6 +175,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/admin'
     | '/all'
+    | '/compose'
     | '/dm'
     | '/mailboxes'
     | '/settings'
@@ -155,23 +183,27 @@ export interface FileRouteTypes {
     | '/dm/$id'
     | '/m/$id'
     | '/msg/$id'
+    | '/api/internal/outbound-health'
     | '/api/public/inbound'
     | '/api/public/register'
+    | '/dm/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
     | '/admin'
     | '/all'
-    | '/dm'
+    | '/compose'
     | '/mailboxes'
     | '/settings'
     | '/api/healthz'
     | '/dm/$id'
     | '/m/$id'
     | '/msg/$id'
+    | '/api/internal/outbound-health'
     | '/api/public/inbound'
     | '/api/public/register'
+    | '/dm'
   id:
     | '__root__'
     | '/'
@@ -179,6 +211,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/_authenticated/admin'
     | '/_authenticated/all'
+    | '/_authenticated/compose'
     | '/_authenticated/dm'
     | '/_authenticated/mailboxes'
     | '/_authenticated/settings'
@@ -186,8 +219,10 @@ export interface FileRouteTypes {
     | '/_authenticated/dm/$id'
     | '/_authenticated/m/$id'
     | '/_authenticated/msg/$id'
+    | '/api/internal/outbound-health'
     | '/api/public/inbound'
     | '/api/public/register'
+    | '/_authenticated/dm/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -195,6 +230,7 @@ export interface RootRouteChildren {
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   AuthRoute: typeof AuthRoute
   ApiHealthzRoute: typeof ApiHealthzRoute
+  ApiInternalOutboundHealthRoute: typeof ApiInternalOutboundHealthRoute
   ApiPublicInboundRoute: typeof ApiPublicInboundRoute
   ApiPublicRegisterRoute: typeof ApiPublicRegisterRoute
 }
@@ -236,6 +272,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAllRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/_authenticated/compose': {
+      id: '/_authenticated/compose'
+      path: '/compose'
+      fullPath: '/compose'
+      preLoaderRoute: typeof AuthenticatedComposeRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
     '/_authenticated/dm': {
       id: '/_authenticated/dm'
       path: '/dm'
@@ -264,6 +307,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthzRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authenticated/dm/': {
+      id: '/_authenticated/dm/'
+      path: '/'
+      fullPath: '/dm/'
+      preLoaderRoute: typeof AuthenticatedDmIndexRouteImport
+      parentRoute: typeof AuthenticatedDmRoute
+    }
     '/_authenticated/dm/$id': {
       id: '/_authenticated/dm/$id'
       path: '/$id'
@@ -285,6 +335,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMsgIdRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
+    '/api/internal/outbound-health': {
+      id: '/api/internal/outbound-health'
+      path: '/api/internal/outbound-health'
+      fullPath: '/api/internal/outbound-health'
+      preLoaderRoute: typeof ApiInternalOutboundHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/inbound': {
       id: '/api/public/inbound'
       path: '/api/public/inbound'
@@ -304,10 +361,12 @@ declare module '@tanstack/react-router' {
 
 interface AuthenticatedDmRouteChildren {
   AuthenticatedDmIdRoute: typeof AuthenticatedDmIdRoute
+  AuthenticatedDmIndexRoute: typeof AuthenticatedDmIndexRoute
 }
 
 const AuthenticatedDmRouteChildren: AuthenticatedDmRouteChildren = {
   AuthenticatedDmIdRoute: AuthenticatedDmIdRoute,
+  AuthenticatedDmIndexRoute: AuthenticatedDmIndexRoute,
 }
 
 const AuthenticatedDmRouteWithChildren = AuthenticatedDmRoute._addFileChildren(
@@ -317,6 +376,7 @@ const AuthenticatedDmRouteWithChildren = AuthenticatedDmRoute._addFileChildren(
 interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedAllRoute: typeof AuthenticatedAllRoute
+  AuthenticatedComposeRoute: typeof AuthenticatedComposeRoute
   AuthenticatedDmRoute: typeof AuthenticatedDmRouteWithChildren
   AuthenticatedMailboxesRoute: typeof AuthenticatedMailboxesRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
@@ -327,6 +387,7 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedAllRoute: AuthenticatedAllRoute,
+  AuthenticatedComposeRoute: AuthenticatedComposeRoute,
   AuthenticatedDmRoute: AuthenticatedDmRouteWithChildren,
   AuthenticatedMailboxesRoute: AuthenticatedMailboxesRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
@@ -343,6 +404,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   AuthRoute: AuthRoute,
   ApiHealthzRoute: ApiHealthzRoute,
+  ApiInternalOutboundHealthRoute: ApiInternalOutboundHealthRoute,
   ApiPublicInboundRoute: ApiPublicInboundRoute,
   ApiPublicRegisterRoute: ApiPublicRegisterRoute,
 }

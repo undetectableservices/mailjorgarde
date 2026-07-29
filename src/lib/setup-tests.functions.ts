@@ -17,7 +17,7 @@ async function assertAdmin(context: AuthedContext) {
     _role: "admin",
   });
   if (error) throw new Error(error.message);
-  if (!isAdmin) throw new Error("Forbidden");
+  if (!isAdmin) throw new Error("Accès administrateur requis");
 }
 
 /** Which server-side settings the stack needs, reported as set/unset only. */
@@ -38,8 +38,22 @@ export const checkServerEnv = createServerFn({ method: "POST" })
         INBOUND_WEBHOOK_SECRET: has("INBOUND_WEBHOOK_SECRET"),
         JELLYFIN_URL: has("JELLYFIN_URL"),
         JELLYFIN_API_KEY: has("JELLYFIN_API_KEY"),
+        OUTBOUND_SMTP_ENABLED:
+          (process.env.OUTBOUND_SMTP_ENABLED || "false").toLowerCase() === "true",
+        OUTBOUND_SMTP_HOST: has("OUTBOUND_SMTP_HOST"),
+        OUTBOUND_SMTP_USERNAME: has("OUTBOUND_SMTP_USERNAME"),
+        OUTBOUND_SMTP_PASSWORD: has("OUTBOUND_SMTP_PASSWORD_B64"),
       },
     };
+  });
+
+/** Authenticate to the configured relay without sending a message. */
+export const checkOutboundRelay = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context);
+    const { verifyOutboundRelay } = await import("./outbound-mail.server");
+    return verifyOutboundRelay();
   });
 
 /**
@@ -113,7 +127,7 @@ export const sendTestDelivery = createServerFn({ method: "POST" })
       .maybeSingle();
     if (!dom)
       throw new Error(
-        `Domain "${domain}" is not managed by this server — add it in the Domains step.`,
+        `Le domaine « ${domain} » n’est pas géré par ce serveur. Ajoutez-le à l’étape Domaines.`,
       );
     const { data: mb } = await supabaseAdmin
       .from("mailboxes")
@@ -121,20 +135,20 @@ export const sendTestDelivery = createServerFn({ method: "POST" })
       .eq("local_part", local)
       .eq("domain_id", dom.id)
       .maybeSingle();
-    if (!mb) throw new Error(`No mailbox "${data.to}" exists yet.`);
+    if (!mb) throw new Error(`L’adresse « ${data.to} » n’existe pas encore.`);
 
     const body =
-      "This is a JorgardeMail delivery test. If you can read it, storage and inbox routing work.";
+      "Ceci est un test de réception JorgardeMail. Si vous pouvez le lire, le stockage et le classement fonctionnent.";
     const { error } = await supabaseAdmin.from("messages").insert({
       mailbox_id: mb.id,
-      sender: "JorgardeMail Setup <setup@jorgardemail>",
+      sender: "Assistant JorgardeMail <setup@jorgardemail>",
       recipient_addr: data.to,
-      subject: "Test delivery ✓",
+      subject: "Test de réception ✓",
       body_text: body,
       folder: "inbox",
       size_bytes: body.length,
     });
-    if (error) throw new Error(error.message);
+    if (error) throw new Error("Impossible d’enregistrer le message de test");
     return { ok: true, to: data.to };
   });
 
@@ -151,7 +165,7 @@ export const checkBackend = createServerFn({ method: "POST" })
       supabaseAdmin.from("messages").select("id", { count: "exact", head: true }),
     ]);
     const err = users.error || domains.error || mailboxes.error || messages.error;
-    if (err) throw new Error(err.message);
+    if (err) throw new Error("Impossible de lire l’état des services");
     return {
       users: users.count ?? 0,
       domains: domains.count ?? 0,

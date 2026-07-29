@@ -4,7 +4,7 @@
 # The safe default is hybrid mode:
 #   * one web/API origin bound to an explicit LAN IPv4 address
 #   * inbound SMTP published on TCP 25
-#   * receive-only SMTP with no client-submission ports
+#   * optional outbound delivery through an authenticated SMTP relay
 set -Eeuo pipefail
 umask 077
 
@@ -33,40 +33,40 @@ LEGACY_PROJECT_NAME=""
 
 log()  { printf '\033[1;33m>\033[0m %s\n' "$*"; }
 ok()   { printf '\033[1;32mOK\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33mWARNING:\033[0m %s\n' "$*" >&2; }
-die()  { printf '\033[1;31mERROR:\033[0m %s\n' "$*" >&2; exit 1; }
+warn() { printf '\033[1;33mAVERTISSEMENT :\033[0m %s\n' "$*" >&2; }
+die()  { printf '\033[1;31mERREUR :\033[0m %s\n' "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 usage() {
   cat <<'EOF'
-JorgardeMail installer
+Installateur JorgardeMail
 
-  sudo ./run.sh                    install/update; new installs use hybrid mode
-  sudo ./run.sh --rebuild          update with fresh images and no build cache
-  sudo ./run.sh --hybrid           LAN web/API + public inbound TCP 25 (default)
-  sudo ./run.sh --local            LAN web/API + LAN-only TCP 25
-  sudo ./run.sh --local-https      private-CA LAN HTTPS + public inbound TCP 25
-  sudo ./run.sh --public-web       public HTTPS web/API + public inbound TCP 25
-  sudo ./run.sh --backup           create and verify a database/config backup
-  sudo ./run.sh --doctor           check container and internal endpoint health
-  sudo ./run.sh --uninstall        stop/remove services; retain config and data
-  sudo ./run.sh --destroy          back up, stop, and delete named data volumes
+  sudo ./run.sh                    installer/mettre à jour en mode hybride par défaut
+  sudo ./run.sh --rebuild          reconstruire avec des images neuves, sans cache
+  sudo ./run.sh --hybrid           web/API privé + réception publique TCP 25 (défaut)
+  sudo ./run.sh --local            web/API privé + TCP 25 limité au réseau privé
+  sudo ./run.sh --local-https      HTTPS privé + réception publique TCP 25
+  sudo ./run.sh --public-web       web/API HTTPS public + réception publique TCP 25
+  sudo ./run.sh --backup           créer et vérifier une sauvegarde
+  sudo ./run.sh --doctor           vérifier les services et leurs points de contrôle
+  sudo ./run.sh --uninstall        arrêter les services en conservant données/configuration
+  sudo ./run.sh --destroy          sauvegarder puis supprimer les volumes de données nommés
 
-Mode is persisted. `--rebuild` without a mode keeps the installed mode.
-Destroy requires typing `DELETE mailjorgarde`; noninteractive use additionally
-`--yes-i-really-mean-it`. Use `--skip-backup` only if the database cannot start
-and permanent loss is intentional.
+Le mode choisi est conservé. `--rebuild` sans mode garde le mode installé.
+La destruction exige de saisir `DELETE mailjorgarde` ; en mode non interactif,
+ajoutez `--yes-i-really-mean-it`. N’utilisez `--skip-backup` que si la base ne
+peut plus démarrer et que la perte définitive est volontaire.
 
-The installer requires Docker Engine, Docker Compose v2, OpenSSL, and systemd.
-It never downloads or pipes a privileged installation script. If Docker is
-missing, install it from https://docs.docker.com/engine/install/ and rerun.
+L’installateur exige Docker Engine, Docker Compose v2, OpenSSL et systemd.
+Il ne télécharge jamais de script privilégié. Si Docker manque, installez-le
+depuis https://docs.docker.com/engine/install/ puis relancez cette commande.
 EOF
 }
 
 set_action() {
   local requested="$1"
   if [[ "$ACTION" != "install" && "$ACTION" != "$requested" ]]; then
-    die "Choose only one action (requested both ${ACTION} and ${requested})."
+    die "Choisissez une seule action (${ACTION} et ${requested} ont été demandées)."
   fi
   ACTION="$requested"
 }
@@ -90,41 +90,41 @@ while [[ $# -gt 0 ]]; do
     --service-stop) set_action service-stop ;;
     --failed-install-cleanup) set_action failed-install-cleanup ;;
     -h|--help) usage; exit 0 ;;
-    *) die "Unknown option: $1 (use --help)" ;;
+    *) die "Option inconnue : $1 (utilisez --help)" ;;
   esac
   shift
 done
 
-[[ $EUID -eq 0 ]] || die "Run this installer as root: sudo ./run.sh"
+[[ $EUID -eq 0 ]] || die "Exécutez cet installateur en tant que root : sudo ./run.sh"
 
 acquire_lock() {
   [[ "${MAILJORGARDE_LOCK_HELD:-0}" == "1" ]] && return 0
-  have flock || die "flock is required (normally provided by util-linux)."
+  have flock || die "flock est requis (normalement fourni par util-linux)."
   install -d -m 0755 /run/lock
   exec 9>/run/lock/mailjorgarde-installer.lock
-  flock -n 9 || die "Another JorgardeMail install, backup, or removal is running."
+  flock -n 9 || die "Une autre installation, sauvegarde ou suppression JorgardeMail est en cours."
   export MAILJORGARDE_LOCK_HELD=1
 }
 
 preflight_docker() {
-  have docker || die "Docker Engine is missing. Install it from https://docs.docker.com/engine/install/ and rerun."
-  docker compose version >/dev/null 2>&1 || die "Docker Compose v2 is missing. Install the official compose plugin."
+  have docker || die "Docker Engine manque. Installez-le depuis https://docs.docker.com/engine/install/ puis relancez."
+  docker compose version >/dev/null 2>&1 || die "Docker Compose v2 manque. Installez l’extension Compose officielle."
   if ! docker info >/dev/null 2>&1; then
     if have systemctl; then systemctl start docker.service >/dev/null 2>&1 || true; fi
-    docker info >/dev/null 2>&1 || die "The Docker daemon is not running or is not reachable."
+    docker info >/dev/null 2>&1 || die "Le service Docker ne fonctionne pas ou reste inaccessible."
   fi
   local compose_up_help
   compose_up_help="$(docker compose up --help 2>&1)"
   grep -q -- '--wait' <<<"$compose_up_help" \
-    || die "Docker Compose is too old; a version supporting 'compose up --wait' is required."
+    || die "Docker Compose est trop ancien ; la commande 'compose up --wait' doit être prise en charge."
 }
 
 preflight_full() {
   local command
   for command in openssl install cp mktemp mv ln readlink awk grep sed date find sha256sum ip systemctl; do
-    have "$command" || die "Required command '$command' is missing."
+    have "$command" || die "La commande requise '$command' est absente."
   done
-  [[ -d /run/systemd/system ]] || die "A systemd-based Linux host is required for reliable reboot startup."
+  [[ -d /run/systemd/system ]] || die "Un système Linux avec systemd est requis pour garantir le redémarrage automatique."
   preflight_docker
 }
 
@@ -133,16 +133,16 @@ prepare_fixed_config() {
   if [[ ! -f "$ENV_FILE" ]]; then
     local source_env="${SOURCE_DIR}/.env.example"
     if [[ -f "${SOURCE_DIR}/.env" ]] && grep -qE '^POSTGRES_PASSWORD=.{24,}$' "${SOURCE_DIR}/.env"; then
-      [[ ! -L "${SOURCE_DIR}/.env" ]] || die "Refusing to import a symlinked .env file."
+      [[ ! -L "${SOURCE_DIR}/.env" ]] || die "Import d’un fichier .env symbolique refusé."
       source_env="${SOURCE_DIR}/.env"
-      log "Migrating the checkout's existing .env into ${ENV_FILE}"
+      log "Migration du fichier .env existant vers ${ENV_FILE}"
     else
       if [[ -f "${SOURCE_DIR}/.env" ]]; then
-        warn "Ignoring the checkout .env because it is not a complete self-hosted server config."
+        warn "Le fichier .env du dépôt est ignoré, car sa configuration serveur est incomplète."
       fi
-      log "Creating private configuration at ${ENV_FILE}"
+      log "Création de la configuration privée dans ${ENV_FILE}"
     fi
-    [[ -f "$source_env" ]] || die "Missing .env.example in ${SOURCE_DIR}."
+    [[ -f "$source_env" ]] || die "Le fichier .env.example manque dans ${SOURCE_DIR}."
     install -o root -g root -m 0600 "$source_env" "$ENV_FILE"
   fi
   chown root:root "$ENV_FILE"
@@ -170,7 +170,7 @@ copy_release_and_run() {
   )
   local entry
   for entry in "${entries[@]}"; do
-    [[ -e "${SOURCE_DIR}/${entry}" ]] || die "Release source is missing ${entry}."
+    [[ -e "${SOURCE_DIR}/${entry}" ]] || die "La source de cette version ne contient pas ${entry}."
     cp -a -- "${SOURCE_DIR}/${entry}" "$destination/"
   done
   chown -R root:root "$destination"
@@ -188,17 +188,17 @@ copy_release_and_run() {
   rc=$?
   set -e
   if [[ $rc -ne 0 ]]; then
-    warn "The new release failed; restoring the previous /opt release link."
+    warn "La nouvelle version a échoué ; restauration du lien vers la version précédente."
     if [[ -n "$old_target" ]]; then
       temp_link="${INSTALL_ROOT}/.rollback.$$"
       ln -s "$old_target" "$temp_link"
       mv -Tf "$temp_link" "$CURRENT_LINK"
       systemctl restart "${SERVICE_NAME}.service" >/dev/null 2>&1 \
-        || warn "Previous release link was restored, but its service needs a manual restart."
+        || warn "Le lien précédent est restauré, mais le service doit être redémarré manuellement."
     else
-      log "Removing containers from the failed first installation (persistent data is retained)"
+      log "Suppression des conteneurs de l’installation échouée (les données sont conservées)"
       /bin/bash "${destination}/run.sh" --installed-run --failed-install-cleanup \
-        || warn "Failed containers could not be removed; the next installation will still reconcile them."
+        || warn "Certains conteneurs en échec n’ont pas été supprimés ; la prochaine installation les réconciliera."
       systemctl disable --now "${SERVICE_NAME}.service" >/dev/null 2>&1 || true
       systemctl disable --now "${BACKUP_SERVICE_NAME}.timer" >/dev/null 2>&1 || true
       unlink "$CURRENT_LINK" 2>/dev/null || true
@@ -221,7 +221,7 @@ if [[ $INSTALLED_RUN -eq 0 ]]; then
       ENV_FILE="${SOURCE_DIR}/.env"
       ;;
     service-start|service-stop|failed-install-cleanup)
-      die "Internal service actions must run from ${CURRENT_LINK}."
+      die "Les actions internes du service doivent partir de ${CURRENT_LINK}."
       ;;
   esac
 fi
@@ -239,9 +239,9 @@ get_var() {
 
 set_var() {
   local key="$1" value="$2" temp line found=0
-  [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]] || die "Invalid configuration key: $key"
-  [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || die "Configuration values may not contain newlines."
-  [[ ! -L "$ENV_FILE" ]] || die "Refusing to edit a symlinked configuration file."
+  [[ "$key" =~ ^[A-Z][A-Z0-9_]*$ ]] || die "Clé de configuration invalide : $key"
+  [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || die "Une valeur de configuration ne peut pas contenir de retour à la ligne."
+  [[ ! -L "$ENV_FILE" ]] || die "Modification d’un fichier de configuration symbolique refusée."
   temp="$(mktemp "${ENV_FILE}.tmp.XXXXXX")"
   chmod 0600 "$temp"
   if [[ -f "$ENV_FILE" ]]; then
@@ -288,12 +288,12 @@ load_mode() {
     esac
     MODE="$inferred"
   fi
-  MODE="$(normalize_mode "$MODE")" || die "Unsupported INSTALL_MODE in ${ENV_FILE}."
+  MODE="$(normalize_mode "$MODE")" || die "INSTALL_MODE n’est pas pris en charge dans ${ENV_FILE}."
 }
 
 PROJECT_NAME="$(get_var COMPOSE_PROJECT_NAME)"
 PROJECT_NAME="${PROJECT_NAME:-$DEFAULT_PROJECT_NAME}"
-[[ "$PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || die "COMPOSE_PROJECT_NAME has invalid characters."
+[[ "$PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || die "COMPOSE_PROJECT_NAME contient des caractères invalides."
 load_mode
 
 compose_for_mode() {
@@ -311,11 +311,27 @@ require_complete_config() {
   for key in POSTGRES_PASSWORD AUTHENTICATOR_PASSWORD AUTH_ADMIN_PASSWORD JWT_SECRET \
              ANON_KEY SERVICE_ROLE_KEY INBOUND_WEBHOOK_SECRET INSTALL_MODE \
              LAN_BIND_ADDRESS WEB_HOSTNAME MAIL_HOSTNAME SMTP_BIND_ADDRESS \
-             SUPABASE_PUBLIC_URL SITE_URL SMTP_TLS_DIR JELLYFIN_URL JELLYFIN_API_KEY; do
+             SUPABASE_PUBLIC_URL SITE_URL SMTP_TLS_DIR JELLYFIN_URL JELLYFIN_API_KEY \
+             OUTBOUND_SMTP_ENABLED; do
     value="$(get_var "$key")"
     [[ -n "$value" ]] || missing+=("$key")
   done
-  [[ ${#missing[@]} -eq 0 ]] || die "Configuration is incomplete (${missing[*]}). Restore ${ENV_FILE} from backup."
+  [[ ${#missing[@]} -eq 0 ]] || die "La configuration est incomplète (${missing[*]}). Restaurez ${ENV_FILE} depuis une sauvegarde."
+  local outbound_enabled outbound_key outbound_value outbound_missing=()
+  outbound_enabled="$(get_var OUTBOUND_SMTP_ENABLED)"
+  case "$outbound_enabled" in
+    true)
+      for outbound_key in OUTBOUND_SMTP_HOST OUTBOUND_SMTP_PORT OUTBOUND_SMTP_SECURITY \
+                          OUTBOUND_SMTP_USERNAME OUTBOUND_SMTP_PASSWORD_B64 OUTBOUND_MAX_RECIPIENTS; do
+        outbound_value="$(get_var "$outbound_key")"
+        [[ -n "$outbound_value" ]] || outbound_missing+=("$outbound_key")
+      done
+      [[ ${#outbound_missing[@]} -eq 0 ]] \
+        || die "L'envoi SMTP est activé mais incomplet (${outbound_missing[*]})."
+      ;;
+    false) ;;
+    *) die "OUTBOUND_SMTP_ENABLED doit valoir true ou false." ;;
+  esac
 }
 
 service_start() {
@@ -349,7 +365,7 @@ acquire_lock
 
 if [[ ! -f "$ENV_FILE" ]]; then
   if [[ "$ACTION" == "uninstall" || "$ACTION" == "destroy" ]]; then
-    warn "No configuration file exists at ${ENV_FILE}; removal will use fixed default names."
+    warn "Aucun fichier de configuration dans ${ENV_FILE} ; la suppression utilisera les noms par défaut."
   else
     prepare_fixed_config
   fi
@@ -357,11 +373,11 @@ fi
 
 PROJECT_NAME="$(get_var COMPOSE_PROJECT_NAME)"
 PROJECT_NAME="${PROJECT_NAME:-$DEFAULT_PROJECT_NAME}"
-[[ "$PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || die "COMPOSE_PROJECT_NAME has invalid characters."
+[[ "$PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || die "COMPOSE_PROJECT_NAME contient des caractères invalides."
 load_mode
 
 validate_volume_name() {
-  [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || die "Unsafe Docker volume name: $1"
+  [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || die "Nom de volume Docker dangereux : $1"
 }
 
 volume_name() {
@@ -419,18 +435,18 @@ down_all() {
     SMTP_BIND_ADDRESS="${SMTP_BIND_ADDRESS:-127.0.0.1}" \
     SMTP_TLS_DIR="${SMTP_TLS_DIR:-/var/lib/mailjorgarde/tls}" \
     "${down[@]}" down --remove-orphans --timeout 60; then
-    die "Docker Compose could not stop the project; data was not reported as removed."
+    die "Docker Compose n’a pas pu arrêter le projet ; aucune suppression de données n’est confirmée."
   fi
   local leftovers
   leftovers="$(docker ps -aq --filter "label=com.docker.compose.project=${PROJECT_NAME}")"
-  [[ -z "$leftovers" ]] || die "Project containers remain after shutdown: ${leftovers}"
+  [[ -z "$leftovers" ]] || die "Des conteneurs du projet subsistent après l’arrêt : ${leftovers}"
 }
 
 if [[ "$ACTION" == "uninstall" ]]; then
-  log "Stopping and disabling JorgardeMail"
+  log "Arrêt et désactivation de JorgardeMail"
   disable_units
   down_all
-  ok "Services removed. Database, configuration, TLS state, backups, and /opt releases were retained."
+  ok "Services supprimés. Base, configuration, TLS, sauvegardes et versions /opt sont conservés."
   exit 0
 fi
 
@@ -459,7 +475,7 @@ is_host_or_ipv4() { is_ipv4 "$1" || is_hostname "$1"; }
 
 validate_port() {
   [[ "$2" =~ ^[0-9]+$ && 10#$2 -ge 1 && 10#$2 -le 65535 ]] \
-    || die "$1 must be an integer from 1 to 65535."
+    || die "$1 doit être un entier compris entre 1 et 65535."
 }
 
 detect_lan_ip() {
@@ -478,7 +494,7 @@ prompt_value() {
   fi
   value="${value:-$default}"
   if [[ -z "$value" && "$required" == "1" ]]; then
-    die "${key} is required. Set it in ${ENV_FILE} or rerun interactively."
+    die "${key} est requis. Définissez-le dans ${ENV_FILE} ou relancez en mode interactif."
   fi
   set_var "$key" "$value"
 }
@@ -495,8 +511,23 @@ prompt_secret_value() {
     printf '\n' >&2
   fi
   if [[ -z "$value" && "$required" == "1" ]]; then
-    die "${key} is required. Set it in ${ENV_FILE} or rerun interactively."
+    die "${key} est requis. Définissez-le dans ${ENV_FILE} ou relancez en mode interactif."
   fi
+  set_var "$key" "$value"
+}
+
+prompt_boolean() {
+  local key="$1" description="$2" default="${3:-false}" value
+  value="$(get_var "$key")"
+  if [[ -z "$value" && -v "$key" ]]; then set_var "$key" "${!key}"; fi
+  prompt_value "$key" "$description" "$default" 1
+  value="$(get_var "$key")"
+  value="${value,,}"
+  case "$value" in
+    true|yes|y|1|oui|o) value=true ;;
+    false|no|n|0|non) value=false ;;
+    *) die "${key} doit valoir true/false (oui/non)." ;;
+  esac
   set_var "$key" "$value"
 }
 
@@ -544,12 +575,12 @@ detect_legacy_db_volume() {
   for candidate in "${candidates[@]}"; do
     [[ -n "$candidate" && "$candidate" != "$DB_VOLUME_NAME" ]] || continue
     if docker volume inspect "$candidate" >/dev/null 2>&1; then
-      [[ -z "$found" ]] || die "Multiple legacy database volumes exist (${found}, ${candidate}); set DB_VOLUME_NAME explicitly."
+      [[ -z "$found" ]] || die "Plusieurs anciens volumes de base existent (${found}, ${candidate}) ; définissez DB_VOLUME_NAME explicitement."
       found="$candidate"
     fi
   done
   if [[ -n "$found" ]]; then
-    warn "Reusing detected legacy database volume: ${found}"
+    warn "Réutilisation de l’ancien volume de base détecté : ${found}"
     DB_VOLUME_NAME="$found"
     set_var DB_VOLUME_NAME "$found"
   fi
@@ -574,59 +605,167 @@ configure_install() {
 
   local lan_default lan current assigned_addresses
   lan_default="$(detect_lan_ip || true)"
-  prompt_value LAN_BIND_ADDRESS "LAN IPv4 address to bind the web UI" "$lan_default" 1
+  prompt_value LAN_BIND_ADDRESS "Adresse IPv4 privée utilisée par l’interface web" "$lan_default" 1
   lan="$(get_var LAN_BIND_ADDRESS)"
-  is_ipv4 "$lan" || die "LAN_BIND_ADDRESS must be an IPv4 address assigned to this host."
-  [[ "$lan" != "0.0.0.0" && "$lan" != 127.* ]] || die "LAN_BIND_ADDRESS may not be wildcard or loopback."
+  is_ipv4 "$lan" || die "LAN_BIND_ADDRESS doit être une adresse IPv4 attribuée à ce serveur."
+  [[ "$lan" != "0.0.0.0" && "$lan" != 127.* ]] || die "LAN_BIND_ADDRESS ne peut être ni générique ni locale à la machine."
   assigned_addresses="$(ip -o -4 addr show | awk '{split($4, address, "/"); print address[1]}')"
   grep -Fxq "$lan" <<<"$assigned_addresses" \
-    || die "LAN_BIND_ADDRESS ${lan} is not currently assigned to this host. Reserve this LAN address and retry."
+    || die "LAN_BIND_ADDRESS ${lan} n’est pas attribuée à ce serveur. Réservez cette adresse puis réessayez."
 
   case "$MODE" in
     public-web)
-      prompt_value WEB_HOSTNAME "public web hostname" "" 1
-      prompt_value MAIL_HOSTNAME "stable MX/DDNS hostname" "" 1
-      prompt_value ACME_EMAIL "ACME contact email" "" 1
+      prompt_value WEB_HOSTNAME "Nom DNS public de l’interface web" "" 1
+      prompt_value MAIL_HOSTNAME "Nom DDNS stable utilisé comme cible MX" "" 1
+      prompt_value ACME_EMAIL "Adresse de contact ACME" "" 1
       ;;
     hybrid|local-https)
-      prompt_value WEB_HOSTNAME "dotted LAN hostname or IPv4 used in the browser" "$lan" 1
-      prompt_value MAIL_HOSTNAME "stable MX/DDNS hostname" "" 1
+      prompt_value WEB_HOSTNAME "Nom DNS privé ou adresse IPv4 utilisé dans le navigateur" "$lan" 1
+      prompt_value MAIL_HOSTNAME "Nom DDNS stable utilisé comme cible MX" "" 1
       ;;
     local)
-      prompt_value WEB_HOSTNAME "dotted LAN hostname or IPv4 used in the browser" "$lan" 1
-      prompt_value MAIL_HOSTNAME "SMTP hostname on the LAN" "mail.local" 1
+      prompt_value WEB_HOSTNAME "Nom DNS privé ou adresse IPv4 utilisé dans le navigateur" "$lan" 1
+      prompt_value MAIL_HOSTNAME "Nom SMTP utilisé sur le réseau privé" "mail.local" 1
       ;;
   esac
 
   local web_host mail_host acme web_port https_port
   web_host="$(get_var WEB_HOSTNAME)"
   mail_host="$(get_var MAIL_HOSTNAME)"
-  is_host_or_ipv4 "$web_host" || die "WEB_HOSTNAME must be an IPv4 address or dotted DNS hostname."
+  is_host_or_ipv4 "$web_host" || die "WEB_HOSTNAME doit être une adresse IPv4 ou un nom DNS complet."
   if [[ "$MODE" == "local" ]]; then
-    is_host_or_ipv4 "$mail_host" || die "MAIL_HOSTNAME must be an IPv4 address or dotted DNS hostname."
+    is_host_or_ipv4 "$mail_host" || die "MAIL_HOSTNAME doit être une adresse IPv4 ou un nom DNS complet."
   else
-    is_hostname "$mail_host" || die "MAIL_HOSTNAME must be a dotted DNS/DDNS hostname, not an IP address."
+    is_hostname "$mail_host" || die "MAIL_HOSTNAME doit être un nom DNS/DDNS complet, pas une adresse IP."
   fi
   if [[ "$MODE" == "public-web" ]]; then
-    is_hostname "$web_host" || die "public-web mode requires a DNS hostname for WEB_HOSTNAME."
+    is_hostname "$web_host" || die "Le mode public-web exige un nom DNS dans WEB_HOSTNAME."
     acme="$(get_var ACME_EMAIL)"
-    [[ "$acme" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || die "ACME_EMAIL is not valid."
+    [[ "$acme" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || die "ACME_EMAIL n’est pas valide."
   fi
 
-  local jellyfin_url jellyfin_key
+  local jellyfin_url jellyfin_key jellyfin_replacement
+  if [[ $REBUILD -eq 1 && $NONINTERACTIVE -eq 0 && -t 0 ]]; then
+    jellyfin_url="$(get_var JELLYFIN_URL)"
+    if [[ -n "$jellyfin_url" ]]; then
+      jellyfin_replacement=""
+      read -r -p "  Adresse Jellyfin [${jellyfin_url}] (Entrée pour conserver) : " jellyfin_replacement || true
+      if [[ -n "$jellyfin_replacement" ]]; then
+        set_var JELLYFIN_URL "$jellyfin_replacement"
+      fi
+    fi
+
+    jellyfin_key="$(get_var JELLYFIN_API_KEY)"
+    if [[ -n "$jellyfin_key" ]]; then
+      jellyfin_replacement=""
+      read -r -s -p "  Nouvelle clé API Jellyfin (Entrée pour conserver l'actuelle): " jellyfin_replacement || true
+      printf '\n' >&2
+      if [[ -n "$jellyfin_replacement" ]]; then
+        set_var JELLYFIN_API_KEY "$jellyfin_replacement"
+      fi
+    fi
+  fi
   prompt_value JELLYFIN_URL \
-    "Jellyfin URL reachable from Docker (not localhost)" \
+    "Adresse de Jellyfin accessible depuis Docker (pas localhost)" \
     "${JELLYFIN_URL:-http://${lan}:8096}" 1
-  prompt_secret_value JELLYFIN_API_KEY "Jellyfin API key (input hidden)" 1
+  prompt_secret_value JELLYFIN_API_KEY "Clé API Jellyfin (saisie masquée)" 1
   jellyfin_url="$(get_var JELLYFIN_URL)"
   jellyfin_url="${jellyfin_url%/}"
   validate_jellyfin_url "$jellyfin_url" \
-    || die "JELLYFIN_URL must be an HTTP(S) URL reachable from Docker; use http://${lan}:8096 for Jellyfin on this host, not localhost."
+    || die "JELLYFIN_URL doit être une adresse HTTP(S) accessible depuis Docker ; utilisez http://${lan}:8096 pour Jellyfin sur cet hôte, pas localhost."
   set_var JELLYFIN_URL "$jellyfin_url"
   jellyfin_key="$(get_var JELLYFIN_API_KEY)"
   [[ ${#jellyfin_key} -ge 16 && ${#jellyfin_key} -le 256 \
      && "$jellyfin_key" =~ ^[A-Za-z0-9._~-]+$ ]] \
-    || die "JELLYFIN_API_KEY must be 16-256 URL-safe characters. Create an API key in Jellyfin Dashboard > Advanced > API Keys."
+    || die "JELLYFIN_API_KEY doit contenir 16 à 256 caractères compatibles avec une URL. Créez-la dans Tableau de bord Jellyfin > Avancé > Clés API."
+
+  local outbound_enabled outbound_host outbound_port outbound_security
+  local outbound_user outbound_password outbound_password_b64 outbound_limit outbound_action
+  outbound_enabled="$(get_var OUTBOUND_SMTP_ENABLED)"
+  if [[ $REBUILD -eq 1 && $NONINTERACTIVE -eq 0 && -t 0 ]]; then
+    if [[ "$outbound_enabled" == "true" ]]; then
+      read -r -p "  Relais SMTP sortant : conserver, reconfigurer ou désactiver [c/r/d] [c] : " outbound_action || true
+      case "${outbound_action,,}" in
+        ""|c|conserver) ;;
+        r|reconfigurer)
+          set_var OUTBOUND_SMTP_HOST ""
+          set_var OUTBOUND_SMTP_PORT ""
+          set_var OUTBOUND_SMTP_SECURITY ""
+          set_var OUTBOUND_SMTP_USERNAME ""
+          set_var OUTBOUND_SMTP_PASSWORD_B64 ""
+          ;;
+        d|desactiver|désactiver) set_var OUTBOUND_SMTP_ENABLED false ;;
+        *) die "Choix SMTP invalide : utilisez c, r ou d." ;;
+      esac
+    elif [[ "$outbound_enabled" == "false" ]]; then
+      read -r -p "  Activer maintenant l'envoi via un relais SMTP authentifié [o/N] : " outbound_action || true
+      case "${outbound_action,,}" in
+        o|oui|y|yes) set_var OUTBOUND_SMTP_ENABLED true ;;
+        ""|n|non|no) ;;
+        *) die "Répondez oui ou non pour l'activation SMTP." ;;
+      esac
+    fi
+  fi
+  prompt_boolean OUTBOUND_SMTP_ENABLED \
+    "Activer l'envoi d'e-mails vers Internet via un relais SMTP authentifié (oui/non)" false
+  outbound_enabled="$(get_var OUTBOUND_SMTP_ENABLED)"
+  outbound_port="$(get_var OUTBOUND_SMTP_PORT)"; outbound_port="${outbound_port:-${OUTBOUND_SMTP_PORT:-587}}"
+  outbound_security="$(get_var OUTBOUND_SMTP_SECURITY)"; outbound_security="${outbound_security:-${OUTBOUND_SMTP_SECURITY:-starttls}}"
+  outbound_limit="$(get_var OUTBOUND_MAX_RECIPIENTS)"; outbound_limit="${outbound_limit:-${OUTBOUND_MAX_RECIPIENTS:-25}}"
+  outbound_security="${outbound_security,,}"
+  validate_port OUTBOUND_SMTP_PORT "$outbound_port"
+  [[ "$outbound_security" == "starttls" || "$outbound_security" == "tls" ]] \
+    || die "OUTBOUND_SMTP_SECURITY doit valoir starttls (port 587) ou tls (port 465)."
+  [[ "$outbound_limit" =~ ^[0-9]+$ && 10#$outbound_limit -ge 1 && 10#$outbound_limit -le 50 ]] \
+    || die "OUTBOUND_MAX_RECIPIENTS doit être un entier compris entre 1 et 50."
+  if [[ "$outbound_enabled" == "true" ]]; then
+    prompt_value OUTBOUND_SMTP_HOST "Nom d'hôte du relais SMTP" "${OUTBOUND_SMTP_HOST:-}" 1
+    prompt_value OUTBOUND_SMTP_PORT \
+      "Port du relais SMTP (587 pour STARTTLS, 465 pour TLS implicite)" "$outbound_port" 1
+    prompt_value OUTBOUND_SMTP_SECURITY \
+      "Sécurité du relais SMTP (starttls ou tls)" "$outbound_security" 1
+    prompt_value OUTBOUND_SMTP_USERNAME "Identifiant du relais SMTP" "${OUTBOUND_SMTP_USERNAME:-}" 1
+    outbound_password_b64="$(get_var OUTBOUND_SMTP_PASSWORD_B64)"
+    if [[ -z "$outbound_password_b64" ]]; then
+      outbound_password="${OUTBOUND_SMTP_PASSWORD:-}"
+      if [[ -z "$outbound_password" && $NONINTERACTIVE -eq 0 && -t 0 ]]; then
+        read -r -s -p "  Mot de passe ou clé API du relais (saisie masquée) : " outbound_password || true
+        printf '\n' >&2
+      fi
+      [[ -n "$outbound_password" ]] \
+        || die "OUTBOUND_SMTP_PASSWORD est requis pour activer l'envoi SMTP."
+      [[ ${#outbound_password} -le 1024 && "$outbound_password" != *$'\n'* \
+         && "$outbound_password" != *$'\r'* && "$outbound_password" != *[![:print:]]* ]] \
+        || die "Le mot de passe SMTP doit contenir 1 à 1024 caractères imprimables sans retour à la ligne."
+      outbound_password_b64="$(printf '%s' "$outbound_password" | openssl base64 -A)"
+      set_var OUTBOUND_SMTP_PASSWORD_B64 "$outbound_password_b64"
+      outbound_password=""
+      unset OUTBOUND_SMTP_PASSWORD 2>/dev/null || true
+    fi
+
+    outbound_host="$(get_var OUTBOUND_SMTP_HOST)"
+    outbound_port="$(get_var OUTBOUND_SMTP_PORT)"
+    outbound_security="$(get_var OUTBOUND_SMTP_SECURITY)"; outbound_security="${outbound_security,,}"
+    outbound_user="$(get_var OUTBOUND_SMTP_USERNAME)"
+    outbound_password_b64="$(get_var OUTBOUND_SMTP_PASSWORD_B64)"
+    is_host_or_ipv4 "$outbound_host" \
+      || die "OUTBOUND_SMTP_HOST doit être un nom d'hôte complet ou une adresse IPv4."
+    validate_port OUTBOUND_SMTP_PORT "$outbound_port"
+    [[ "$outbound_security" == "starttls" || "$outbound_security" == "tls" ]] \
+      || die "OUTBOUND_SMTP_SECURITY doit valoir starttls ou tls."
+    [[ ${#outbound_user} -ge 1 && ${#outbound_user} -le 320 \
+       && "$outbound_user" != *[[:space:]]* && "$outbound_user" != *$'\n'* && "$outbound_user" != *$'\r'* ]] \
+      || die "OUTBOUND_SMTP_USERNAME doit contenir 1 à 320 caractères sans espace."
+    [[ ${#outbound_password_b64} -ge 4 && ${#outbound_password_b64} -le 1400 \
+       && $((${#outbound_password_b64} % 4)) -eq 0 \
+       && "$outbound_password_b64" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] \
+      || die "OUTBOUND_SMTP_PASSWORD_B64 est invalide ; reconfigurez le relais."
+  else
+    log "L'envoi externe reste désactivé ; relancez l'installateur après avoir obtenu les identifiants du relais."
+  fi
+  set_var OUTBOUND_SMTP_PORT "$outbound_port"
+  set_var OUTBOUND_SMTP_SECURITY "$outbound_security"
+  set_var OUTBOUND_MAX_RECIPIENTS "$outbound_limit"
 
   web_port="$(get_var WEB_PORT)"; web_port="${web_port:-6969}"
   https_port="$(get_var HTTPS_LOCAL_PORT)"; https_port="${https_port:-8443}"
@@ -669,7 +808,7 @@ configure_install() {
     fi
     if [[ -n "$LEGACY_PROJECT_NAME" && "$LEGACY_PROJECT_NAME" != "$PROJECT_NAME" ]]; then
       [[ "$LEGACY_PROJECT_NAME" =~ ^[a-z0-9][a-z0-9_-]*$ ]] \
-        || die "Legacy Compose project label is unsafe: ${LEGACY_PROJECT_NAME}"
+        || die "Le nom de l’ancien projet Compose est dangereux : ${LEGACY_PROJECT_NAME}"
     else
       LEGACY_PROJECT_NAME=""
     fi
@@ -678,7 +817,7 @@ configure_install() {
       current="$(get_var "$key")"
       [[ ${#current} -ge 24 ]] || missing+=("$key")
     done
-    [[ ${#missing[@]} -eq 0 ]] || die "Existing database volume ${DB_VOLUME_NAME} found, but credentials are missing (${missing[*]}). Restore the config backup; credentials will not be regenerated."
+    [[ ${#missing[@]} -eq 0 ]] || die "Le volume ${DB_VOLUME_NAME} existe, mais des identifiants manquent (${missing[*]}). Restaurez la configuration ; ces secrets ne seront pas régénérés."
   else
     ensure_secret POSTGRES_PASSWORD 24
     ensure_secret AUTHENTICATOR_PASSWORD 24
@@ -700,15 +839,15 @@ configure_install() {
 
   local tls_dir
   tls_dir="$(get_var SMTP_TLS_DIR)"; tls_dir="${tls_dir:-${DEFAULT_STATE_DIR}/tls}"
-  [[ "$tls_dir" == /* && "$tls_dir" != "/" && "$tls_dir" != *:* && "$tls_dir" != *[[:space:]]* ]] || die "SMTP_TLS_DIR must be a safe absolute Linux path without spaces."
+  [[ "$tls_dir" == /* && "$tls_dir" != "/" && "$tls_dir" != *:* && "$tls_dir" != *[[:space:]]* ]] || die "SMTP_TLS_DIR doit être un chemin Linux absolu sûr, sans espace."
   set_var SMTP_TLS_DIR "$tls_dir"
   set_var SMTP_TLS_CERT "/smtp-certs/smtp.crt"
   set_var SMTP_TLS_KEY "/smtp-certs/smtp.key"
   local backup_dir retention
   backup_dir="$(get_var BACKUP_DIR)"; backup_dir="${backup_dir:-$DEFAULT_BACKUP_DIR}"
-  [[ "$backup_dir" == /* && "$backup_dir" != "/" && "$backup_dir" != *[[:space:]]* ]] || die "BACKUP_DIR must be a safe absolute Linux path without spaces."
+  [[ "$backup_dir" == /* && "$backup_dir" != "/" && "$backup_dir" != *[[:space:]]* ]] || die "BACKUP_DIR doit être un chemin Linux absolu sûr, sans espace."
   retention="$(get_var BACKUP_RETENTION_DAYS)"; retention="${retention:-14}"
-  [[ "$retention" =~ ^[0-9]+$ && 10#$retention -le 3650 ]] || die "BACKUP_RETENTION_DAYS must be 0-3650."
+  [[ "$retention" =~ ^[0-9]+$ && 10#$retention -le 3650 ]] || die "BACKUP_RETENTION_DAYS doit être compris entre 0 et 3650."
   set_var BACKUP_DIR "$backup_dir"
   set_var BACKUP_RETENTION_DAYS "$retention"
   chmod 0600 "$ENV_FILE"
@@ -725,12 +864,12 @@ generate_smtp_certificate() {
   # everyone else while granting that container group read/traverse access.
   install -d -o root -g 1000 -m 0750 "$tls_dir"
   if [[ -f "$cert" && -f "$key" && ! -f "$marker" ]]; then
-    openssl x509 -in "$cert" -noout >/dev/null 2>&1 || die "Custom SMTP certificate ${cert} is invalid."
-    openssl pkey -in "$key" -noout >/dev/null 2>&1 || die "Custom SMTP private key ${key} is invalid."
+    openssl x509 -in "$cert" -noout >/dev/null 2>&1 || die "Le certificat SMTP personnalisé ${cert} est invalide."
+    openssl pkey -in "$key" -noout >/dev/null 2>&1 || die "La clé privée SMTP ${key} est invalide."
     chown root:1000 "$cert" "$key"
     chmod 0644 "$cert"
     chmod 0640 "$key"
-    ok "Preserving operator-managed SMTP TLS certificate"
+    ok "Conservation du certificat SMTP TLS fourni par l’administrateur"
     return 0
   fi
   if [[ ! -f "$cert" || ! -f "$key" ]]; then
@@ -741,14 +880,14 @@ generate_smtp_certificate() {
     regenerate=1
   fi
   [[ $regenerate -eq 1 ]] || return 0
-  log "Generating persistent self-signed SMTP STARTTLS certificate for ${mail_host}"
+  log "Génération du certificat SMTP STARTTLS auto-signé persistant pour ${mail_host}"
   temp_key="$(mktemp "${tls_dir}/.smtp-key.XXXXXX")"
   temp_cert="$(mktemp "${tls_dir}/.smtp-cert.XXXXXX")"
   if ! openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 825 \
       -subj "/CN=${mail_host}" -addext "subjectAltName=DNS:${mail_host}" \
       -keyout "$temp_key" -out "$temp_cert" >/dev/null 2>&1; then
     rm -f "$temp_key" "$temp_cert"
-    die "OpenSSL could not create the SMTP certificate."
+    die "OpenSSL n’a pas pu créer le certificat SMTP."
   fi
   install -o root -g 1000 -m 0640 "$temp_key" "$key"
   install -o root -g 1000 -m 0644 "$temp_cert" "$cert"
@@ -770,12 +909,12 @@ backup_database() {
   require_complete_config
   compose_for_mode
   "${COMPOSE[@]}" up -d db >/dev/null
-  wait_for_database || die "Database did not become ready; no backup was created."
+  wait_for_database || die "La base de données n’est pas devenue disponible ; aucune sauvegarde n’a été créée."
 
   local backup_dir retention timestamp base dump temp_dump env_copy manifest
   backup_dir="$(get_var BACKUP_DIR)"; backup_dir="${backup_dir:-$DEFAULT_BACKUP_DIR}"
   retention="$(get_var BACKUP_RETENTION_DAYS)"; retention="${retention:-14}"
-  [[ "$backup_dir" == /* && "$backup_dir" != "/" ]] || die "Unsafe BACKUP_DIR: ${backup_dir}"
+  [[ "$backup_dir" == /* && "$backup_dir" != "/" ]] || die "BACKUP_DIR dangereux : ${backup_dir}"
   install -d -o root -g root -m 0700 "$backup_dir"
   timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
   base="${backup_dir}/mailjorgarde-${timestamp}"
@@ -783,14 +922,14 @@ backup_database() {
   temp_dump="${base}.dump.partial"
   env_copy="${base}.env"
   manifest="${base}.sha256"
-  log "Creating PostgreSQL backup ${dump}"
+  log "Création de la sauvegarde PostgreSQL ${dump}"
   if ! "${COMPOSE[@]}" exec -T db pg_dump -U postgres -d postgres --format=custom >"$temp_dump"; then
     rm -f "$temp_dump"
-    die "pg_dump failed; the incomplete backup was removed."
+    die "pg_dump a échoué ; la sauvegarde incomplète a été supprimée."
   fi
-  [[ -s "$temp_dump" ]] || { rm -f "$temp_dump"; die "pg_dump produced an empty file."; }
+  [[ -s "$temp_dump" ]] || { rm -f "$temp_dump"; die "pg_dump a produit un fichier vide."; }
   "${COMPOSE[@]}" exec -T db pg_restore --list <"$temp_dump" >/dev/null \
-    || { rm -f "$temp_dump"; die "Backup verification failed."; }
+    || { rm -f "$temp_dump"; die "La vérification de la sauvegarde a échoué."; }
   mv -f "$temp_dump" "$dump"
   chmod 0600 "$dump"
   install -o root -g root -m 0600 "$ENV_FILE" "$env_copy"
@@ -800,44 +939,45 @@ backup_database() {
     find "$backup_dir" -maxdepth 1 -type f -name 'mailjorgarde-*' -mtime "+${retention}" -delete
   fi
   LAST_BACKUP="$dump"
-  ok "Verified backup created: ${dump}"
+  ok "Sauvegarde vérifiée créée : ${dump}"
 }
 
 doctor_stack() {
   require_complete_config
   local failures=0 lan_bind https_port smtp_mapping mail_host mail_addresses mail_ipv4 expected_public_ip
+  local outbound_enabled outbound_health
   compose_for_mode
   "${COMPOSE[@]}" ps
   "${COMPOSE[@]}" exec -T db psql -U postgres -d postgres -qtAX -c 'SELECT 1' | grep -qx 1 \
-    || { warn "Database query failed"; failures=$((failures + 1)); }
+    || { warn "La requête de base de données a échoué"; failures=$((failures + 1)); }
   "${COMPOSE[@]}" exec -T db psql -U postgres -d postgres -qtAX \
     -c "SELECT to_regprocedure('public.purge_expired_mailboxes()') IS NOT NULL" | grep -qx t \
-    || { warn "Temporary-mail cleanup function is missing"; failures=$((failures + 1)); }
+    || { warn "La fonction de nettoyage des adresses temporaires manque"; failures=$((failures + 1)); }
   "${COMPOSE[@]}" exec -T gateway wget -qO- http://127.0.0.1:8000/auth/v1/health >/dev/null \
-    || { warn "Auth/gateway health failed"; failures=$((failures + 1)); }
+    || { warn "Le contrôle de l’authentification/passerelle a échoué"; failures=$((failures + 1)); }
   "${COMPOSE[@]}" exec -T web wget -qO- http://127.0.0.1:6969/api/healthz >/dev/null \
-    || { warn "Web readiness failed"; failures=$((failures + 1)); }
+    || { warn "Le service web n’est pas prêt"; failures=$((failures + 1)); }
   "${COMPOSE[@]}" exec -T smtp wget -qO- http://127.0.0.1:8080/readyz >/dev/null \
-    || { warn "SMTP readiness failed"; failures=$((failures + 1)); }
+    || { warn "Le service SMTP n’est pas prêt"; failures=$((failures + 1)); }
   smtp_mapping="$("${COMPOSE[@]}" port smtp 2525 2>/dev/null || true)"
   if [[ "$smtp_mapping" == *:25 ]]; then
-    ok "SMTP listener is published locally at ${smtp_mapping}"
+    ok "Le service SMTP est publié localement sur ${smtp_mapping}"
   else
-    warn "SMTP container is ready, but Docker does not report a host TCP 25 mapping"
+    warn "Le conteneur SMTP est prêt, mais Docker ne publie pas le port TCP 25 sur l’hôte"
     failures=$((failures + 1))
   fi
   if [[ "$MODE" == "public-web" ]]; then
     "${COMPOSE[@]}" exec -T caddy caddy validate --config /etc/caddy/Caddyfile >/dev/null \
-      || { warn "Public Caddy configuration failed validation"; failures=$((failures + 1)); }
+      || { warn "La configuration Caddy publique est invalide"; failures=$((failures + 1)); }
   else
     "${COMPOSE[@]}" exec -T caddy-lan caddy validate --config /etc/caddy/Caddyfile >/dev/null \
-      || { warn "LAN Caddy configuration failed validation"; failures=$((failures + 1)); }
+      || { warn "La configuration Caddy privée est invalide"; failures=$((failures + 1)); }
     if [[ "$MODE" == "local-https" ]]; then
       lan_bind="$(get_var LAN_BIND_ADDRESS)"
       https_port="$(get_var HTTPS_LOCAL_PORT)"; https_port="${https_port:-8443}"
       openssl s_client -connect "${lan_bind}:${https_port}" -noservername -showcerts </dev/null 2>/dev/null \
         | grep -q -- 'BEGIN CERTIFICATE' \
-        || { warn "LAN HTTPS handshake failed"; failures=$((failures + 1)); }
+        || { warn "La négociation HTTPS privée a échoué"; failures=$((failures + 1)); }
     fi
   fi
   mail_host="$(get_var MAIL_HOSTNAME)"
@@ -846,18 +986,32 @@ doctor_stack() {
       | awk '!seen[$1]++ { print $1 }' || true)"
     mail_ipv4="${mail_addresses%%$'\n'*}"
     if [[ -n "$mail_ipv4" ]]; then
-      ok "DDNS ${mail_host} resolves to IPv4 ${mail_ipv4}"
+      ok "Le DDNS ${mail_host} résout l’adresse IPv4 ${mail_ipv4}"
       expected_public_ip="$(get_var PUBLIC_IP)"
       if [[ -n "$expected_public_ip" ]] \
          && ! grep -Fxq "$expected_public_ip" <<<"$mail_addresses"; then
-        warn "DDNS ${mail_host} does not match configured PUBLIC_IP ${expected_public_ip}"
+        warn "Le DDNS ${mail_host} ne correspond pas à PUBLIC_IP ${expected_public_ip}"
       fi
     else
-      warn "MAIL_HOSTNAME (${mail_host}) does not currently resolve to IPv4 through this server's resolver; the SMTP service itself still accepts hostnames."
+      warn "MAIL_HOSTNAME (${mail_host}) ne résout actuellement aucune IPv4 ; le service SMTP accepte néanmoins les noms DNS."
     fi
   fi
   if [[ "$MODE" != "local" ]]; then
-    log "Public ingress cannot be proven from this host (NAT hairpin may fail). Test ${mail_host}:25 from a genuinely external network."
+    log "L’accès public ne peut pas être prouvé depuis ce serveur. Testez ${mail_host}:25 depuis un réseau réellement extérieur."
+  fi
+  outbound_enabled="$(get_var OUTBOUND_SMTP_ENABLED)"
+  if [[ "$outbound_enabled" == "true" ]]; then
+    outbound_health="$("${COMPOSE[@]}" exec -T web sh -ec \
+      'wget -qO- --post-data="" --header="x-jorgarde-doctor: ${INBOUND_WEBHOOK_SECRET}" http://127.0.0.1:6969/api/internal/outbound-health' \
+      2>/dev/null || true)"
+    if grep -Fq '"ok":true' <<<"$outbound_health"; then
+      ok "Le relais SMTP sortant est joignable et l'authentification réussit"
+    else
+      warn "Échec du relais SMTP sortant : vérifiez le nom d'hôte, TLS, les identifiants et l'autorisation du domaine"
+      failures=$((failures + 1))
+    fi
+  else
+    warn "L'envoi vers Internet est désactivé ; la réception et les messages internes restent disponibles."
   fi
   [[ $failures -eq 0 ]]
 }
@@ -867,11 +1021,11 @@ if [[ "$ACTION" == "doctor" ]]; then doctor_stack || exit 1; exit 0; fi
 
 confirm_destroy() {
   if [[ $ASSUME_DESTROY -eq 1 ]]; then return 0; fi
-  [[ $NONINTERACTIVE -eq 0 && -t 0 ]] || die "Noninteractive destroy requires --yes-i-really-mean-it."
+  [[ $NONINTERACTIVE -eq 0 && -t 0 ]] || die "La destruction non interactive exige --yes-i-really-mean-it."
   local answer
-  warn "This permanently deletes Docker volume ${DB_VOLUME_NAME}."
-  read -r -p "Type 'DELETE mailjorgarde' to continue: " answer
-  [[ "$answer" == "DELETE mailjorgarde" ]] || die "Destroy cancelled."
+  warn "Cette action supprime définitivement le volume Docker ${DB_VOLUME_NAME}."
+  read -r -p "Saisissez 'DELETE mailjorgarde' pour continuer : " answer
+  [[ "$answer" == "DELETE mailjorgarde" ]] || die "Destruction annulée."
 }
 
 if [[ "$ACTION" == "destroy" ]]; then
@@ -879,76 +1033,76 @@ if [[ "$ACTION" == "destroy" ]]; then
   if docker volume inspect "$DB_VOLUME_NAME" >/dev/null 2>&1 && [[ $SKIP_BACKUP -eq 0 ]]; then
     backup_database
   elif [[ $SKIP_BACKUP -eq 1 ]]; then
-    warn "Skipping the safety backup by explicit request."
+    warn "Sauvegarde de sécurité ignorée à votre demande explicite."
   fi
   disable_units
   down_all
   for volume in "$DB_VOLUME_NAME" "$CADDY_DATA_VOLUME_NAME" "$CADDY_CONFIG_VOLUME_NAME" \
                 "$CADDY_LAN_DATA_VOLUME_NAME" "$CADDY_LAN_CONFIG_VOLUME_NAME"; do
     if docker volume inspect "$volume" >/dev/null 2>&1; then
-      docker volume rm "$volume" >/dev/null || die "Could not delete volume ${volume}."
+      docker volume rm "$volume" >/dev/null || die "Impossible de supprimer le volume ${volume}."
     fi
   done
-  ok "Named database/proxy volumes deleted. Config, TLS files, backups, and /opt releases remain recoverable."
+  ok "Volumes de base/proxy supprimés. Configuration, TLS, sauvegardes et versions /opt restent récupérables."
   exit 0
 fi
 
 configure_install
 generate_smtp_certificate
 compose_for_mode
-"${COMPOSE[@]}" config --quiet || die "Docker Compose configuration validation failed."
+"${COMPOSE[@]}" config --quiet || die "La validation de la configuration Docker Compose a échoué."
 
 stop_legacy_project() {
   [[ -n "$LEGACY_PROJECT_NAME" ]] || return 0
   local -a containers
   mapfile -t containers < <(docker ps -aq --filter "label=com.docker.compose.project=${LEGACY_PROJECT_NAME}")
   [[ ${#containers[@]} -gt 0 ]] || return 0
-  warn "Migrating containers from legacy Compose project ${LEGACY_PROJECT_NAME}; named volumes are retained."
+  warn "Migration des conteneurs de l’ancien projet Compose ${LEGACY_PROJECT_NAME} ; les volumes sont conservés."
   docker stop --time 60 "${containers[@]}" >/dev/null \
-    || die "Could not stop every legacy project container."
+    || die "Impossible d’arrêter tous les conteneurs de l’ancien projet."
   docker rm "${containers[@]}" >/dev/null \
-    || die "Could not remove every stopped legacy project container."
+    || die "Impossible de supprimer tous les anciens conteneurs arrêtés."
 }
 
 stop_legacy_project
 
 if [[ $DB_EXISTED -eq 1 ]]; then
-  log "Existing database detected; taking a verified pre-update backup"
+  log "Base existante détectée ; création d’une sauvegarde vérifiée avant mise à jour"
   backup_database
 fi
 
 if [[ $REBUILD -eq 1 ]]; then
-  log "Pulling current runtime images"
-  "${COMPOSE[@]}" pull --ignore-buildable || die "Could not pull runtime images."
+  log "Récupération des images d’exécution actuelles"
+  "${COMPOSE[@]}" pull --ignore-buildable || die "Impossible de récupérer les images d’exécution."
 fi
 
-log "Building the web and inbound SMTP images"
+log "Construction du service web, de la réception SMTP et de l'envoi sortant"
 BUILD_FLAGS=()
 [[ $REBUILD -eq 1 ]] && BUILD_FLAGS+=(--no-cache --pull)
-"${COMPOSE[@]}" build "${BUILD_FLAGS[@]}" || die "Image build failed."
+"${COMPOSE[@]}" build "${BUILD_FLAGS[@]}" || die "La construction des images a échoué."
 
 if [[ -n "$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT_NAME}")" ]]; then
-  log "Quiescing the existing stack before database/auth reconciliation"
+  log "Arrêt contrôlé des services avant réconciliation de la base et de l’authentification"
   "${COMPOSE[@]}" stop --timeout 60 \
-    || die "Could not stop the existing stack cleanly before the update."
+    || die "Impossible d’arrêter proprement l’installation avant la mise à jour."
 fi
 
 # Compose may otherwise reuse successful one-shot containers and satisfy
 # depends_on from their old exit status. Force both reconciliation jobs to run
 # against this release before any long-running service starts.
 "${COMPOSE[@]}" rm -sf auth-bootstrap schema-init >/dev/null \
-  || die "Could not reset the database reconciliation jobs."
+  || die "Impossible de réinitialiser les tâches de réconciliation de la base."
 
-log "Starting the stack and waiting for readiness"
+log "Démarrage des services et attente de leur disponibilité"
 if ! "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 240; then
   "${COMPOSE[@]}" ps || true
   "${COMPOSE[@]}" logs --tail 100 auth-bootstrap schema-init auth gateway web smtp || true
-  die "The stack did not become healthy; systemd was not installed/updated."
+  die "Les services ne sont pas devenus opérationnels ; systemd n’a pas été installé ou mis à jour."
 fi
 
-log "Validating the private Jellyfin registration gate"
+log "Validation de l'inscription privée via Jellyfin"
 "${COMPOSE[@]}" exec -T web node scripts/check-jellyfin.mjs \
-  || die "Jellyfin registration validation failed. Check JELLYFIN_URL/API key and ensure Jellyfin listens on an address reachable from Docker."
+  || die "La validation Jellyfin a échoué. Vérifiez JELLYFIN_URL, la clé API et l'accessibilité de Jellyfin depuis Docker."
 
 json_escape() {
   local value="$1"
@@ -962,26 +1116,26 @@ provision_admin() {
   local present username password confirm generated=0 payload
   present="$("${COMPOSE[@]}" exec -T db psql -U postgres -d postgres -qtAX \
     -c "SELECT EXISTS (SELECT 1 FROM public.user_roles WHERE role::text = 'admin');")" \
-    || die "Could not inspect administrator state."
-  [[ "$present" == "t" ]] && { ok "Administrator already provisioned"; return 0; }
+    || die "Impossible de vérifier l’état du compte administrateur."
+  [[ "$present" == "t" ]] && { ok "Le compte administrateur existe déjà"; return 0; }
 
   username="${ADMIN_USERNAME:-}"
   password="${ADMIN_PASSWORD:-}"
   if [[ $NONINTERACTIVE -eq 0 && -t 0 ]]; then
     while [[ ! "$username" =~ ^[a-z0-9][a-z0-9_-]{1,22}[a-z0-9]$ ]]; do
-      read -r -p "  Initial admin username [admin]: " username
+      read -r -p "  Identifiant de l’administrateur initial [admin] : " username
       username="${username:-admin}"
       username="${username,,}"
       [[ "$username" =~ ^[a-z0-9][a-z0-9_-]{1,22}[a-z0-9]$ ]] \
-        || warn "Use 3-24 lowercase letters, digits, underscore, or hyphen."
+        || warn "Utilisez 3 à 24 lettres minuscules, chiffres, _ ou -."
     done
     if [[ -z "$password" ]]; then
       while :; do
-        read -r -s -p "  Initial admin password (12-128 characters): " password; echo
-        read -r -s -p "  Confirm admin password: " confirm; echo
-        [[ "$password" == "$confirm" ]] || { warn "Passwords did not match."; continue; }
+        read -r -s -p "  Mot de passe initial (12 à 128 caractères) : " password; echo
+        read -r -s -p "  Confirmez le mot de passe : " confirm; echo
+        [[ "$password" == "$confirm" ]] || { warn "Les mots de passe ne correspondent pas."; continue; }
         [[ ${#password} -ge 12 && ${#password} -le 128 && "$password" != *$'\n'* ]] \
-          || { warn "Password must be 12-128 characters."; continue; }
+          || { warn "Le mot de passe doit contenir 12 à 128 caractères."; continue; }
         break
       done
     fi
@@ -993,34 +1147,34 @@ provision_admin() {
     fi
   fi
   username="${username,,}"
-  [[ "$username" =~ ^[a-z0-9][a-z0-9_-]{1,22}[a-z0-9]$ ]] || die "ADMIN_USERNAME is invalid."
+  [[ "$username" =~ ^[a-z0-9][a-z0-9_-]{1,22}[a-z0-9]$ ]] || die "ADMIN_USERNAME est invalide."
   [[ ${#password} -ge 12 && ${#password} -le 128 && "$password" != *$'\n'* && "$password" != *$'\r'* && "$password" != *[![:print:]]* ]] \
-    || die "ADMIN_PASSWORD must be 12-128 printable characters without newlines."
+    || die "ADMIN_PASSWORD doit contenir 12 à 128 caractères imprimables sans retour à la ligne."
   payload="{\"username\":\"$(json_escape "$username")\",\"password\":\"$(json_escape "$password")\",\"displayName\":\"$(json_escape "$username")\"}"
   printf '%s' "$payload" | "${COMPOSE[@]}" exec -T web node scripts/provision-admin.mjs \
-    || die "Initial administrator provisioning failed."
+    || die "La création du compte administrateur initial a échoué."
   if [[ $generated -eq 1 ]]; then
-    printf '\nGenerated administrator credentials (shown once):\n  username: %s\n  password: %s\n\n' "$username" "$password"
-    warn "Store this password now; it is not saved by the installer."
+    printf '\nIdentifiants administrateur générés (affichés une seule fois) :\n  identifiant : %s\n  mot de passe : %s\n\n' "$username" "$password"
+    warn "Conservez ce mot de passe maintenant ; l’installateur ne l’enregistre pas."
   fi
   unset password confirm payload ADMIN_PASSWORD
 }
 
 provision_admin
-doctor_stack || die "Internal health verification failed; inspect the logs above."
+doctor_stack || die "Le contrôle de santé interne a échoué ; consultez les journaux ci-dessus."
 
 install_systemd_units() {
   local tls_mount backup_mount legacy
   tls_mount="$(get_var SMTP_TLS_DIR)"
   backup_mount="$(get_var BACKUP_DIR)"
-  log "Installing systemd service and daily backup timer"
+  log "Installation du service systemd et de la sauvegarde quotidienne"
   for legacy in "${LEGACY_SERVICE_NAMES[@]}"; do
     systemctl disable --now "${legacy}.service" >/dev/null 2>&1 || true
     rm -f "/etc/systemd/system/${legacy}.service"
   done
   cat >"/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
 [Unit]
-Description=JorgardeMail self-hosted mail stack
+Description=Service de messagerie JorgardeMail
 Requires=docker.service
 After=docker.service network-online.target
 Wants=network-online.target
@@ -1045,7 +1199,7 @@ EOF
 
   cat >"/etc/systemd/system/${BACKUP_SERVICE_NAME}.service" <<EOF
 [Unit]
-Description=Back up JorgardeMail database and private configuration
+Description=Sauvegarde de la base et de la configuration JorgardeMail
 Requires=docker.service
 After=docker.service ${SERVICE_NAME}.service
 RequiresMountsFor=${backup_mount}
@@ -1061,7 +1215,7 @@ EOF
 
   cat >"/etc/systemd/system/${BACKUP_SERVICE_NAME}.timer" <<EOF
 [Unit]
-Description=Daily JorgardeMail backup
+Description=Sauvegarde quotidienne JorgardeMail
 
 [Timer]
 OnCalendar=daily
@@ -1078,13 +1232,13 @@ EOF
   systemctl daemon-reload
   systemctl enable --now docker.service >/dev/null
   systemctl enable --now "${SERVICE_NAME}.service" >/dev/null \
-    || die "Could not enable/start ${SERVICE_NAME}.service."
+    || die "Impossible d’activer ou démarrer ${SERVICE_NAME}.service."
   systemctl restart "${SERVICE_NAME}.service" >/dev/null \
-    || die "The installed systemd service could not reconcile the healthy stack."
+    || die "Le service systemd installé n’a pas pu réconcilier les services."
   systemctl enable --now "${BACKUP_SERVICE_NAME}.timer" >/dev/null \
-    || die "Could not enable the daily backup timer."
+    || die "Impossible d’activer la sauvegarde quotidienne."
   systemctl is-active --quiet "${SERVICE_NAME}.service" \
-    || die "${SERVICE_NAME}.service is not active after installation."
+    || die "${SERVICE_NAME}.service n’est pas actif après l’installation."
 }
 
 install_systemd_units
@@ -1096,35 +1250,41 @@ HTTPS_PORT="$(get_var HTTPS_LOCAL_PORT)"
 LAN_BIND="$(get_var LAN_BIND_ADDRESS)"
 
 echo
-ok "JorgardeMail is healthy and enabled for automatic reboot startup."
+ok "JorgardeMail fonctionne correctement et démarrera automatiquement après un redémarrage."
 case "$MODE" in
   hybrid)
-    echo "  Web + API: http://${WEB_HOST}:${WEB_PORT} (host bind ${LAN_BIND} only)"
-    echo "  Inbound:   ${MAIL_HOST}:25 (public TCP 25; opportunistic self-signed STARTTLS)"
+    echo "  Web + API : http://${WEB_HOST}:${WEB_PORT} (liaison limitée à ${LAN_BIND})"
+    echo "  Réception : ${MAIL_HOST}:25 (TCP 25 public ; STARTTLS auto-signé opportuniste)"
     ;;
   local)
-    echo "  Web + API: http://${WEB_HOST}:${WEB_PORT} (host bind ${LAN_BIND} only)"
-    echo "  Inbound:   ${MAIL_HOST}:25 (LAN bind ${LAN_BIND} only)"
+    echo "  Web + API : http://${WEB_HOST}:${WEB_PORT} (liaison limitée à ${LAN_BIND})"
+    echo "  Réception : ${MAIL_HOST}:25 (réseau privé ${LAN_BIND} uniquement)"
     ;;
   local-https)
-    echo "  Web + API: https://${WEB_HOST}:${HTTPS_PORT} (private Caddy CA; LAN bind ${LAN_BIND})"
-    echo "  Inbound:   ${MAIL_HOST}:25 (public TCP 25; opportunistic self-signed STARTTLS)"
+    echo "  Web + API : https://${WEB_HOST}:${HTTPS_PORT} (autorité Caddy privée ; liaison ${LAN_BIND})"
+    echo "  Réception : ${MAIL_HOST}:25 (TCP 25 public ; STARTTLS auto-signé opportuniste)"
     ;;
   public-web)
-    echo "  Web + API: https://${WEB_HOST} (public ports 80/443)"
-    echo "  Inbound:   ${MAIL_HOST}:25 (public TCP 25; opportunistic self-signed STARTTLS)"
+    echo "  Web + API : https://${WEB_HOST} (ports publics 80/443)"
+    echo "  Réception : ${MAIL_HOST}:25 (TCP 25 public ; STARTTLS auto-signé opportuniste)"
     ;;
 esac
 if [[ "$MODE" == "hybrid" || "$MODE" == "local" ]]; then
-  warn "LAN HTTP does not encrypt passwords, session tokens, mail, or DMs on Wi-Fi/Ethernet."
-  warn "Use --local-https and trust Caddy's local CA unless every LAN segment is trusted."
+  warn "HTTP ne chiffre pas mots de passe, sessions, e-mails ou messages sur Wi-Fi/Ethernet."
+  warn "Utilisez --local-https hors d’un réseau WireGuard entièrement maîtrisé."
 fi
 echo
-echo "For each recipient domain, add it in Admin and set its MX record to ${MAIL_HOST}."
-echo "The DDNS A record for ${MAIL_HOST} must track this connection, and your router/ISP"
-echo "must permit inbound TCP 25. This is a receive-only SMTP service."
+echo "Pour chaque domaine reçu, ajoutez-le dans l'administration et pointez son MX vers ${MAIL_HOST}."
+echo "L'enregistrement A DDNS de ${MAIL_HOST} doit suivre cette connexion, et le routeur/FAI"
+echo "doit autoriser le port TCP 25 entrant. Un nom DDNS convient : aucune adresse IP littérale n'est requise."
+if [[ "$(get_var OUTBOUND_SMTP_ENABLED)" == "true" ]]; then
+  echo "L'envoi externe utilise le relais authentifié $(get_var OUTBOUND_SMTP_HOST):$(get_var OUTBOUND_SMTP_PORT)."
+  echo "Publiez les enregistrements SPF et DKIM du relais ainsi qu'une politique DMARC pour chaque domaine expéditeur."
+else
+  echo "L'envoi vers Internet est prêt mais désactivé. Relancez l'installateur avec les identifiants du relais SMTP."
+fi
 echo
-echo "Operations:"
+echo "Commandes utiles :"
 echo "  systemctl status ${SERVICE_NAME}"
 echo "  systemctl restart ${SERVICE_NAME}"
 echo "  sudo ${CURRENT_LINK}/run.sh --backup"

@@ -20,7 +20,7 @@ async function assertAdmin(context: { supabase: SupabaseClient<Database>; userId
     _role: "admin",
   });
   if (error) throw new Error(error.message);
-  if (!isAdmin) throw new Error("Forbidden");
+  if (!isAdmin) throw new Error("Accès administrateur requis");
 }
 
 export const broadcastToAllUsers = createServerFn({ method: "POST" })

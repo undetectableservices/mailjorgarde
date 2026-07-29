@@ -13,18 +13,18 @@ async function readStdin() {
   process.stdin.setEncoding("utf8");
   for await (const chunk of process.stdin) {
     raw += chunk;
-    if (raw.length > 16_384) fail("input is too large");
+    if (raw.length > 16_384) fail("la saisie est trop volumineuse");
   }
   try {
     return JSON.parse(raw);
   } catch {
-    fail("expected a JSON object on stdin");
+    fail("un objet JSON était attendu sur l'entrée standard");
   }
 }
 
 const baseUrl = process.env.SUPABASE_URL?.replace(/\/$/, "");
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (!baseUrl || !serviceKey) fail("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
+if (!baseUrl || !serviceKey) fail("SUPABASE_URL et SUPABASE_SERVICE_ROLE_KEY sont requis");
 
 const input = await readStdin();
 const username = typeof input.username === "string" ? input.username.trim().toLowerCase() : "";
@@ -35,8 +35,9 @@ const displayName =
     : username;
 
 if (!USERNAME_RE.test(username))
-  fail("username must be 3-24 characters using letters, digits, _ or -");
-if (password.length < 12 || password.length > 128) fail("password must be 12-128 characters");
+  fail("l'identifiant doit contenir 3 à 24 lettres, chiffres, _ ou -");
+if (password.length < 12 || password.length > 128)
+  fail("le mot de passe doit contenir 12 à 128 caractères");
 
 const headers = {
   apikey: serviceKey,
@@ -48,10 +49,11 @@ const roleCheck = await fetch(
   `${baseUrl}/rest/v1/user_roles?role=eq.admin&select=user_id&limit=1`,
   { headers },
 );
-if (!roleCheck.ok) fail(`could not inspect administrator state (HTTP ${roleCheck.status})`);
+if (!roleCheck.ok)
+  fail(`impossible de vérifier l'état de l'administrateur (HTTP ${roleCheck.status})`);
 const roles = await roleCheck.json();
 if (Array.isArray(roles) && roles.length > 0) {
-  process.stdout.write("administrator already provisioned\n");
+  process.stdout.write("administrateur déjà créé\n");
   process.exit(0);
 }
 
@@ -68,7 +70,7 @@ const response = await fetch(`${baseUrl}/auth/v1/admin/users`, {
 });
 
 if (!response.ok) {
-  let detail = "authentication service rejected the request";
+  let detail = "le service d'authentification a refusé la demande";
   try {
     const payload = await response.json();
     if (typeof payload?.message === "string") detail = payload.message;
@@ -80,5 +82,5 @@ if (!response.ok) {
 }
 
 const created = await response.json();
-if (!created?.id) fail("authentication service returned an invalid user response");
-process.stdout.write(`created administrator @${username}\n`);
+if (!created?.id) fail("le service d'authentification a renvoyé une réponse utilisateur invalide");
+process.stdout.write(`administrateur @${username} créé\n`);

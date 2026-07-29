@@ -1,14 +1,14 @@
 # JorgardeMail
 
-JorgardeMail is a self-hosted, receive-only mail and internal messaging web
-application for a small private group. Its production stack runs PostgreSQL,
-GoTrue authentication, PostgREST, a TanStack Start web server, an inbound SMTP
-receiver, and Caddy in Docker.
+JorgardeMail is a private mail and internal messaging service for a small
+trusted group. It receives internet mail directly and can send through an
+authenticated SMTP relay.
 
 The production default is intentionally hybrid:
 
 - web UI, authentication, API, and direct messages share one LAN-bound origin;
 - internet email enters through TCP 25;
+- outgoing internet email leaves through a TLS-protected authenticated relay;
 - application data and credentials stay on the host;
 - friend registration is gated by an exact, password-verified Jellyfin account;
 - systemd and Docker restart the service after reboot or container failure.

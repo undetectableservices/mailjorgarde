@@ -34,8 +34,8 @@ function errorMessage(error: unknown, fallback: string): string {
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({
     meta: [
-      { title: "Admin — JorgardeMail" },
-      { name: "description", content: "Administrator panel." },
+      { title: "Administration — JorgardeMail" },
+      { name: "description", content: "Centre d’administration JorgardeMail." },
     ],
   }),
   component: AdminPage,
@@ -63,17 +63,17 @@ function AdminPage() {
   useEffect(() => {
     if (!isLoading && !isAdmin) navigate({ to: "/all" });
   }, [isAdmin, isLoading, navigate]);
-  if (!isAdmin) return <div className="p-8 text-muted-foreground">Checking permissions…</div>;
+  if (!isAdmin) return <div className="p-8 text-muted-foreground">Vérification des accès…</div>;
 
   return (
     <div className="app-page">
       <PageHeader
-        eyebrow="Node operations"
-        title="Admin control"
-        description="Configure delivery, identities, domains, and system-wide communication from one private console."
+        eyebrow="Administration privée"
+        title="Centre de contrôle"
+        description="Gérez les utilisateurs, les domaines, la réception et les annonces depuis un seul espace."
         actions={
           <div className="premium-badge normal-case tracking-normal">
-            <ShieldCheck className="size-3.5" /> Administrator
+            <ShieldCheck className="size-3.5" /> Administrateur
           </div>
         }
       />
@@ -81,7 +81,14 @@ function AdminPage() {
         <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1 sm:inline-grid sm:w-auto sm:grid-cols-4">
           {(["setup", "users", "domains", "broadcast"] as const).map((item) => (
             <TabsTrigger key={item} value={item} className="capitalize">
-              {item === "setup" ? "Setup wizard" : item}
+              {
+                {
+                  setup: "Configuration",
+                  users: "Utilisateurs",
+                  domains: "Domaines",
+                  broadcast: "Annonce",
+                }[item]
+              }
             </TabsTrigger>
           ))}
         </TabsList>
@@ -103,43 +110,43 @@ function Broadcast() {
   const mut = useMutation({
     mutationFn: async () => send({ data: { subject, body } }),
     onSuccess: (r) => {
-      toast.success(`Broadcast delivered to ${r.sent} user${r.sent === 1 ? "" : "s"}`);
+      toast.success(`Annonce distribuée à ${r.sent} utilisateur${r.sent === 1 ? "" : "s"}`);
       setSubject("");
       setBody("");
     },
-    onError: (error) => toast.error(errorMessage(error, "Broadcast failed")),
+    onError: (error) => toast.error(errorMessage(error, "L’annonce n’a pas pu être envoyée")),
   });
 
   return (
-    <div className="noir-panel max-w-2xl space-y-4 rounded-2xl p-6">
+    <div className="noir-panel max-w-2xl space-y-4 rounded-3xl p-6 sm:p-7">
       <div className="flex items-center gap-3">
         <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-gold ring-1 ring-primary/15">
           <Megaphone size={18} />
         </div>
         <div>
-          <h2 className="font-display text-2xl">Broadcast to all users</h2>
+          <h2 className="font-display text-2xl">Annoncer à tous les utilisateurs</h2>
           <p className="text-xs text-muted-foreground">
-            One message lands in every user's unified inbox.
+            Le message apparaîtra dans la boîte de réception de chaque utilisateur.
           </p>
         </div>
       </div>
-      <Input placeholder="Subject" value={subject} onChange={(e) => setSubject(e.target.value)} />
+      <Input placeholder="Objet" value={subject} onChange={(e) => setSubject(e.target.value)} />
       <Textarea
-        placeholder="Write your announcement…"
+        placeholder="Rédigez votre annonce…"
         value={body}
         onChange={(e) => setBody(e.target.value)}
         rows={8}
       />
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">
-          Only users who own at least one mailbox will receive it.
+          Seuls les utilisateurs possédant au moins une adresse la recevront.
         </span>
         <Button
           onClick={() => mut.mutate()}
           disabled={!subject.trim() || !body.trim() || mut.isPending}
           className="bg-gold text-white"
         >
-          {mut.isPending ? "Sending…" : "Send broadcast"}
+          {mut.isPending ? "Envoi…" : "Envoyer l’annonce"}
         </Button>
       </div>
     </div>
@@ -166,10 +173,10 @@ function Users() {
       await updateLimit({ data: { userId: user_id, limit } });
     },
     onSuccess: () => {
-      toast.success("Limit updated");
+      toast.success("Limite mise à jour");
       refetch();
     },
-    onError: (error) => toast.error(errorMessage(error, "Could not update the mailbox limit")),
+    onError: (error) => toast.error(errorMessage(error, "Impossible de modifier la limite")),
   });
 
   const users = data?.users ?? [];
@@ -178,9 +185,9 @@ function Users() {
     <div className="space-y-4">
       <AdminUserProvisioning onCreated={() => void refetch()} />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Total users" value={users.length.toString()} />
-        <StatCard label="Total addresses" value={(data?.totalBoxes ?? 0).toString()} />
-        <StatCard label="Total storage" value={fmtBytes(data?.total ?? 0)} accent />
+        <StatCard label="Utilisateurs" value={users.length.toString()} />
+        <StatCard label="Adresses" value={(data?.totalBoxes ?? 0).toString()} />
+        <StatCard label="Stockage" value={fmtBytes(data?.total ?? 0)} accent />
       </div>
       <div className="noir-panel mail-list divide-y divide-border">
         {users.map((u) => (
@@ -191,11 +198,11 @@ function Users() {
                 className="text-xs text-muted-foreground truncate max-w-md"
                 title={u.addresses.join(", ")}
               >
-                {u.addresses.length ? u.addresses.join(", ") : "no addresses"}
+                {u.addresses.length ? u.addresses.join(", ") : "aucune adresse"}
               </div>
             </div>
             <div className="text-sm text-muted-foreground tabular-nums">
-              {u.mailbox_count} / {u.mailbox_limit} addr
+              {u.mailbox_count} / {u.mailbox_limit} adr.
             </div>
             <div className="text-sm text-gold tabular-nums w-24 text-right">
               {fmtBytes(u.storage_bytes)}
@@ -217,7 +224,7 @@ function Users() {
           </div>
         ))}
         {users.length === 0 && (
-          <div className="p-12 text-center text-muted-foreground">No users yet.</div>
+          <div className="p-12 text-center text-muted-foreground">Aucun utilisateur.</div>
         )}
       </div>
     </div>
@@ -237,11 +244,15 @@ function StatCard({ label, value, accent }: { label: string; value: string; acce
 
 function domainStatus(expires_at: string | null) {
   if (!expires_at)
-    return { label: "No expiry set", tone: "text-muted-foreground", days: null as number | null };
+    return {
+      label: "Aucune expiration",
+      tone: "text-muted-foreground",
+      days: null as number | null,
+    };
   const days = Math.ceil((new Date(expires_at).getTime() - Date.now()) / 86400000);
-  if (days < 0) return { label: `Expired ${-days}d ago`, tone: "text-red-400", days };
-  if (days <= 30) return { label: `Expires in ${days}d`, tone: "text-amber-400", days };
-  return { label: `Expires in ${days}d`, tone: "text-emerald-400", days };
+  if (days < 0) return { label: `Expiré depuis ${-days} j`, tone: "text-red-400", days };
+  if (days <= 30) return { label: `Expire dans ${days} j`, tone: "text-amber-400", days };
+  return { label: `Expire dans ${days} j`, tone: "text-emerald-400", days };
 }
 
 function Domains() {
@@ -255,20 +266,20 @@ function Domains() {
   const add = useMutation({
     mutationFn: async () => {
       const n = name.trim().toLowerCase();
-      if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(n))
-        throw new Error("Enter a valid domain like example.com");
+      if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(n))
+        throw new Error("Saisissez un domaine valide, par exemple exemple.fr");
       const { error } = await supabase
         .from("domains")
         .insert({ name: n, expires_at: expiry ? new Date(expiry).toISOString() : null });
-      if (error) throw error;
+      if (error) throw new Error("Ce domaine existe déjà ou ne peut pas être ajouté");
     },
     onSuccess: () => {
       setName("");
       setExpiry("");
       refetch();
-      toast.success("Domain added");
+      toast.success("Domaine ajouté");
     },
-    onError: (error) => toast.error(errorMessage(error, "Could not add the domain")),
+    onError: (error) => toast.error(errorMessage(error, "Impossible d’ajouter le domaine")),
   });
 
   const updateExpiry = useMutation({
@@ -281,9 +292,9 @@ function Domains() {
     },
     onSuccess: () => {
       refetch();
-      toast.success("Expiry updated");
+      toast.success("Expiration mise à jour");
     },
-    onError: (error) => toast.error(errorMessage(error, "Could not update domain expiry")),
+    onError: (error) => toast.error(errorMessage(error, "Impossible de modifier l’expiration")),
   });
 
   const del = useMutation({
@@ -294,24 +305,24 @@ function Domains() {
     },
     onSuccess: (deletedName) => {
       refetch();
-      toast.success(`${deletedName} and its mail data were deleted`);
+      toast.success(`${deletedName} et ses messages ont été supprimés`);
     },
-    onError: (error) => toast.error(errorMessage(error, "Could not delete the domain")),
+    onError: (error) => toast.error(errorMessage(error, "Impossible de supprimer le domaine")),
   });
 
   return (
     <div>
-      <div className="noir-panel mb-4 grid gap-2 rounded-2xl p-4 md:grid-cols-[1fr_auto_auto]">
-        <Input placeholder="example.com" value={name} onChange={(e) => setName(e.target.value)} />
+      <div className="noir-panel mb-4 grid gap-2 rounded-3xl p-4 md:grid-cols-[1fr_auto_auto]">
+        <Input placeholder="exemple.fr" value={name} onChange={(e) => setName(e.target.value)} />
         <Input
           type="date"
           value={expiry}
           onChange={(e) => setExpiry(e.target.value)}
           className="md:w-48"
-          title="Registrar expiration (optional)"
+          title="Expiration chez le registrar (facultatif)"
         />
         <Button onClick={() => add.mutate()} className="bg-gold text-white">
-          Add domain
+          Ajouter
         </Button>
       </div>
       <div className="noir-panel mail-list divide-y divide-border">
@@ -336,12 +347,12 @@ function Domains() {
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label={`Delete ${d.name}`}
+                aria-label={`Supprimer ${d.name}`}
                 disabled={del.isPending}
                 onClick={() => {
                   if (
                     window.confirm(
-                      `Permanently delete ${d.name}, every mailbox on it, and all of their mail? This cannot be undone.`,
+                      `Supprimer définitivement ${d.name}, toutes ses adresses et tous leurs messages ? Cette action est irréversible.`,
                     )
                   ) {
                     del.mutate(d.id);
@@ -354,7 +365,7 @@ function Domains() {
           );
         })}
         {(!domains || domains.length === 0) && (
-          <div className="p-12 text-center text-muted-foreground">No domains yet.</div>
+          <div className="p-12 text-center text-muted-foreground">Aucun domaine.</div>
         )}
       </div>
     </div>

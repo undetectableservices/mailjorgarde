@@ -19,18 +19,18 @@ function NotFoundComponent() {
     <div className="auth-shell dark flex min-h-screen items-center justify-center px-4">
       <div className="auth-card jm-fade-up w-full max-w-md rounded-3xl p-8 text-center sm:p-10">
         <BrandMark className="mx-auto size-14" />
-        <div className="page-eyebrow mt-6 justify-center before:hidden">Signal lost</div>
+        <div className="page-eyebrow mt-6 justify-center before:hidden">Page introuvable</div>
         <h1 className="font-display text-7xl tracking-[-0.08em] text-foreground">404</h1>
-        <h2 className="mt-3 text-xl font-semibold">Page not found</h2>
+        <h2 className="mt-3 text-xl font-semibold">Cette page n’existe pas</h2>
         <p className="mt-2 text-sm leading-6 text-muted-foreground">
-          The page you're looking for doesn't exist.
+          Le contenu recherché a peut-être été déplacé ou supprimé.
         </p>
         <div className="mt-6">
           <Link
             to="/"
             className="bg-gold inline-flex h-11 items-center justify-center rounded-xl px-5 text-sm font-semibold text-primary-foreground shadow-lg"
           >
-            Go home
+            Retour à l’accueil
           </Link>
         </div>
       </div>
@@ -48,8 +48,10 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
     <div className="auth-shell dark flex min-h-screen items-center justify-center px-4">
       <div className="auth-card jm-fade-up w-full max-w-md rounded-3xl p-8 text-center sm:p-10">
         <BrandMark className="mx-auto size-14" />
-        <h1 className="mt-6 font-display text-3xl">Something broke</h1>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">{error.message}</p>
+        <h1 className="mt-6 font-display text-3xl">Un problème est survenu</h1>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">
+          Une erreur inattendue empêche l’affichage de cette page. Réessayez dans quelques instants.
+        </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
             onClick={() => {
@@ -58,10 +60,10 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
             }}
             className="bg-gold rounded-xl px-5 py-2.5 text-sm font-semibold text-primary-foreground"
           >
-            Try again
+            Réessayer
           </button>
           <a href="/" className="rounded-xl border border-input px-5 py-2.5 text-sm font-medium">
-            Go home
+            Retour à l’accueil
           </a>
         </div>
       </div>
@@ -78,7 +80,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         name: "description",
         content:
-          "Private multi-domain inbound email with internal DMs, temp mailboxes, and an admin panel.",
+          "Messagerie multi-domaine avec adresses éphémères, conversations et espace d’administration.",
       },
       { name: "robots", content: "noindex, nofollow, noarchive" },
       { name: "theme-color", content: "#090d18" },
@@ -89,7 +91,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       {
         property: "og:description",
         content:
-          "Private multi-domain inbound email with internal DMs, temp mailboxes, and an admin panel.",
+          "Messagerie multi-domaine avec adresses éphémères, conversations et espace d’administration.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -111,7 +113,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="fr" className="dark">
       <head>
         <HeadContent />
       </head>

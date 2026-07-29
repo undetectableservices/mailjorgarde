@@ -9,6 +9,7 @@ import { copyText } from "@/lib/copy-text";
 import {
   checkBackend,
   checkDns,
+  checkOutboundRelay,
   checkServerEnv,
   checkSmtpListener,
   sendTestDelivery,
@@ -37,12 +38,12 @@ export function CopyBtn({ value }: { value: string }) {
           setOk(true);
           setTimeout(() => setOk(false), 1200);
         } catch (error) {
-          toast.error(error instanceof Error ? error.message : "Copy failed");
+          toast.error(error instanceof Error ? error.message : "La copie a échoué");
         }
       }}
       className="text-xs px-2 py-1 rounded border border-border hover:border-gold hover:text-gold transition-colors"
     >
-      {ok ? "Copied" : "Copy"}
+      {ok ? "Copié" : "Copier"}
     </button>
   );
 }
@@ -59,12 +60,12 @@ function Pill({ state, label }: { state: PillState; label?: string }) {
   const txt =
     label ??
     (state === "ok"
-      ? "Pass"
+      ? "Réussi"
       : state === "fail"
-        ? "Fail"
+        ? "Échec"
         : state === "run"
-          ? "Testing…"
-          : "Not tested");
+          ? "Vérification…"
+          : "Non vérifié");
   return (
     <span className={`text-[11px] px-2 py-0.5 rounded-full border whitespace-nowrap ${tone}`}>
       {txt}
@@ -75,8 +76,8 @@ function Pill({ state, label }: { state: PillState; label?: string }) {
 const PORTS = [
   {
     port: 25,
-    label: "Local SMTP receiver (published as TCP 25)",
-    why: "Checks the real SMTP service and greeting inside this stack. Router, CGNAT, and ISP reachability require a separate test from outside your network.",
+    label: "Réception SMTP locale (publiée en TCP 25)",
+    why: "Vérifie le service SMTP de cette installation. L’accès depuis Internet doit ensuite être testé depuis un réseau extérieur.",
     banner: true,
   },
 ];
@@ -92,6 +93,7 @@ export function SetupWizard() {
   const runEnv = useServerFn(checkServerEnv);
   const runPort = useServerFn(checkSmtpListener);
   const runDns = useServerFn(checkDns);
+  const runOutbound = useServerFn(checkOutboundRelay);
   const runDelivery = useServerFn(sendTestDelivery);
   const runBackend = useServerFn(checkBackend);
 
@@ -127,17 +129,18 @@ export function SetupWizard() {
   const addDomain = useMutation({
     mutationFn: async () => {
       const n = newDomain.trim().toLowerCase();
-      if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(n))
-        throw new Error("Enter a valid domain like example.com");
+      if (!/^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/.test(n)) {
+        throw new Error("Saisissez un domaine valide, par exemple exemple.fr");
+      }
       const { error } = await supabase.from("domains").insert({ name: n });
-      if (error) throw error;
+      if (error) throw new Error("Ce domaine existe déjà ou ne peut pas être ajouté");
     },
     onSuccess: () => {
       setNewDomain("");
       refetchDomains();
-      toast.success("Domain added");
+      toast.success("Domaine ajouté");
     },
-    onError: (error) => toast.error(getErrorMessage(error, "Failed to add domain")),
+    onError: (error) => toast.error(getErrorMessage(error, "Impossible d’ajouter le domaine")),
   });
 
   const testPort = async (port: number, banner: boolean) => {
@@ -145,10 +148,10 @@ export function SetupWizard() {
     try {
       const res = await runPort({ data: { banner } });
       setPortResults((r) => ({ ...r, [port]: res }));
-    } catch (error: unknown) {
+    } catch {
       setPortResults((r) => ({
         ...r,
-        [port]: { loading: false, open: false, error: getErrorMessage(error, "test failed") },
+        [port]: { loading: false, open: false, error: "Le test local a échoué" },
       }));
     }
   };
@@ -160,10 +163,22 @@ export function SetupWizard() {
   const delivery = useMutation({
     mutationFn: async () => runDelivery({ data: { to: testAddr.trim() } }),
     onSuccess: (r) => {
-      toast.success(`Test message delivered to ${r.to} — check the inbox.`);
+      toast.success(`Message de test livré à ${r.to} — consultez la boîte de réception.`);
       refetchHealth();
     },
-    onError: (error) => toast.error(getErrorMessage(error, "Delivery test failed")),
+    onError: (error) => toast.error(getErrorMessage(error, "Le test de réception a échoué")),
+  });
+
+  const outboundCheck = useMutation({
+    mutationFn: () => runOutbound(),
+    onSuccess: (result) => {
+      if (result.enabled && result.configured) {
+        toast.success("Relais SMTP authentifié et prêt à envoyer");
+      } else {
+        toast.info("L'envoi externe est désactivé dans la configuration du serveur");
+      }
+    },
+    onError: (error) => toast.error(getErrorMessage(error, "La connexion au relais SMTP a échoué")),
   });
 
   const runCheck = async (
@@ -192,26 +207,31 @@ export function SetupWizard() {
         (records) =>
           Boolean(mx) && records.some((record) => record.toLowerCase().split(/\s+/).at(-1) === mx),
       ),
-      runCheck(`${d}:MAIL_A`, mailHostname, "A", (records) => records.length > 0),
+      runCheck(
+        `${d}:MAIL_A`,
+        mailHostname,
+        "A",
+        (records) => records.length > 0 && (!serverIp || records.includes(serverIp)),
+      ),
       runCheck(`${d}:MAIL_AAAA`, mailHostname, "AAAA", (records) => records.length > 0),
     ]);
   };
 
   const steps = [
-    "Welcome",
-    "Server",
+    "Bienvenue",
+    "Serveur",
     "Ports",
-    "Domains",
-    "DNS records",
-    "Verify DNS",
-    "Test mail",
-    "Done",
+    "Domaines",
+    "DNS",
+    "Vérification",
+    "Tests",
+    "Terminé",
   ];
 
   return (
     <div className="space-y-6">
       {/* Progress rail */}
-      <div className="noir-panel rounded-xl p-4">
+      <div className="noir-panel rounded-3xl p-4">
         <div className="flex items-center gap-2 flex-wrap">
           {steps.map((s, i) => (
             <button key={s} onClick={() => setStep(i)} className="flex items-center gap-2 group">
@@ -232,32 +252,32 @@ export function SetupWizard() {
       </div>
 
       {step === 0 && (
-        <div className="noir-panel rounded-xl p-8 space-y-4">
-          <h2 className="font-display text-3xl text-gold">Welcome to JorgardeMail</h2>
+        <div className="noir-panel rounded-3xl p-8 space-y-4">
+          <h2 className="font-display text-3xl text-gold">Configurer JorgardeMail</h2>
           <p className="text-muted-foreground">
-            This wizard takes you from a fresh install to reliably receiving internet mail while
-            keeping the web app on your LAN.
+            Cet assistant vérifie votre installation, la réception depuis Internet et l’envoi via
+            votre relais SMTP, tout en conservant l’application sur votre réseau privé.
           </p>
           <ul className="text-sm space-y-2 pl-4 list-disc marker:text-gold">
-            <li>Confirm the server config and its public IP.</li>
-            <li>Forward and test inbound SMTP on TCP 25.</li>
-            <li>Add your domains and their DNS records, verified live.</li>
-            <li>Test database delivery, then send a real message from an outside provider.</li>
+            <li>Vérifier la configuration du serveur et son nom DDNS.</li>
+            <li>Tester la réception SMTP entrante sur TCP 25.</li>
+            <li>Ajouter vos domaines et contrôler leurs enregistrements DNS.</li>
+            <li>Valider la réception locale puis la connexion au relais d’envoi.</li>
           </ul>
           <Button onClick={() => setStep(1)} className="bg-gold text-background hover:opacity-90">
-            Start setup
+            Commencer
           </Button>
         </div>
       )}
 
       {step === 1 && (
-        <div className="noir-panel rounded-xl p-8 space-y-5">
+        <div className="noir-panel rounded-3xl p-8 space-y-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="font-display text-2xl text-gold">Your server</h2>
+              <h2 className="font-display text-2xl text-gold">Votre serveur</h2>
               <p className="text-sm text-muted-foreground">
-                Your DDNS mail hostname must resolve to the public address that forwards TCP 25
-                here.
+                Le nom DDNS utilisé comme cible MX doit pointer vers l’adresse publique qui redirige
+                le port TCP 25 vers ce serveur.
               </p>
             </div>
             <Button
@@ -269,17 +289,17 @@ export function SetupWizard() {
               }}
               disabled={envLoading}
             >
-              {envLoading ? "Testing…" : "Re-test"}
+              {envLoading ? "Vérification…" : "Revérifier"}
             </Button>
           </div>
 
           <div className="rounded-lg bg-card p-4 border border-border flex items-center justify-between gap-4">
             <div>
               <div className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                Optional expected public IP
+                Adresse IPv4 publique attendue — facultatif
               </div>
               <div className="font-mono text-2xl text-gold mt-1">
-                {serverIp || "verify through DDNS below"}
+                {serverIp || "vérification par DDNS ci-dessous"}
               </div>
             </div>
             {serverIp && <CopyBtn value={serverIp} />}
@@ -288,10 +308,10 @@ export function SetupWizard() {
           <div className="rounded-lg bg-card p-4 border border-border flex items-center justify-between gap-4">
             <div>
               <div className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                Configured MX target / DDNS hostname
+                Cible MX / nom DDNS configuré
               </div>
               <div className="font-mono text-lg text-gold mt-1">
-                {mailHostname || "not configured"}
+                {mailHostname || "non configuré"}
               </div>
             </div>
             {mailHostname && <CopyBtn value={mailHostname} />}
@@ -299,12 +319,17 @@ export function SetupWizard() {
 
           <div className="grid sm:grid-cols-2 gap-3">
             {[
-              ["Backend URL", env?.env.SUPABASE_URL],
-              ["Backend public key", env?.env.SUPABASE_PUBLISHABLE_KEY],
-              ["Backend service key", env?.env.SUPABASE_SERVICE_ROLE_KEY],
-              ["Inbound webhook secret", env?.env.INBOUND_WEBHOOK_SECRET],
-              ["Jellyfin URL", env?.env.JELLYFIN_URL],
-              ["Jellyfin API key", env?.env.JELLYFIN_API_KEY],
+              ["URL des services internes", env?.env.SUPABASE_URL],
+              ["Clé publique des services", env?.env.SUPABASE_PUBLISHABLE_KEY],
+              ["Clé privée des services", env?.env.SUPABASE_SERVICE_ROLE_KEY],
+              ["Secret de réception", env?.env.INBOUND_WEBHOOK_SECRET],
+              ["Adresse Jellyfin", env?.env.JELLYFIN_URL],
+              ["Clé API Jellyfin", env?.env.JELLYFIN_API_KEY],
+              ["Relais SMTP sortant", env?.env.OUTBOUND_SMTP_ENABLED],
+              [
+                "Identifiants du relais",
+                env?.env.OUTBOUND_SMTP_USERNAME && env?.env.OUTBOUND_SMTP_PASSWORD,
+              ],
             ].map(([label, ok]) => (
               <div
                 key={label as string}
@@ -313,7 +338,7 @@ export function SetupWizard() {
                 <span className="text-sm">{label as string}</span>
                 <Pill
                   state={ok === undefined ? "idle" : ok ? "ok" : "fail"}
-                  label={ok === undefined ? "…" : ok ? "Configured" : "Missing"}
+                  label={ok === undefined ? "…" : ok ? "Configuré" : "Manquant"}
                 />
               </div>
             ))}
@@ -321,22 +346,22 @@ export function SetupWizard() {
 
           <div className="rounded-lg bg-card p-4 border border-border">
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm">Backend connectivity</span>
+              <span className="text-sm">État des services</span>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => refetchHealth()}
                 disabled={healthLoading}
               >
-                {healthLoading ? "Testing…" : "Test backend"}
+                {healthLoading ? "Vérification…" : "Tester les services"}
               </Button>
             </div>
             {health ? (
               <div className="grid grid-cols-4 gap-2 text-center text-xs">
                 {[
-                  ["Users", health.users],
-                  ["Domains", health.domains],
-                  ["Mailboxes", health.mailboxes],
+                  ["Utilisateurs", health.users],
+                  ["Domaines", health.domains],
+                  ["Adresses", health.mailboxes],
                   ["Messages", health.messages],
                 ].map(([l, v]) => (
                   <div key={l as string} className="rounded border border-border p-2">
@@ -346,69 +371,69 @@ export function SetupWizard() {
                 ))}
               </div>
             ) : (
-              <div className="text-xs text-muted-foreground">Not tested yet.</div>
+              <div className="text-xs text-muted-foreground">Pas encore vérifié.</div>
             )}
           </div>
 
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => setStep(0)}>
-              Back
+              Retour
             </Button>
             <Button onClick={() => setStep(2)} className="bg-gold text-background">
-              Next: ports
+              Suivant : ports
             </Button>
           </div>
         </div>
       )}
 
       {step === 2 && (
-        <div className="noir-panel rounded-xl p-8 space-y-5">
-          <h2 className="font-display text-2xl text-gold">Expose only inbound SMTP</h2>
+        <div className="noir-panel rounded-3xl p-8 space-y-5">
+          <h2 className="font-display text-2xl text-gold">Ports de messagerie</h2>
           <p className="text-sm text-muted-foreground">
-            Internet mail delivery uses <strong>TCP 25</strong>. The web UI and API stay on your
-            LAN; ports 465 and 587 are not used because this build does not provide outbound
-            submission.
+            La réception depuis Internet utilise le port <strong>TCP 25</strong>. L’envoi établit
+            une connexion sortante chiffrée vers le relais sur le port 587 ou 465 : ces deux ports
+            ne doivent jamais être redirigés depuis le routeur.
           </p>
 
           <ol className="text-sm space-y-2 pl-5 list-decimal marker:text-gold">
             <li>
-              Open your router admin page (usually{" "}
+              Ouvrez l’administration de votre routeur (généralement{" "}
               <code className="text-gold">http://192.168.1.1</code>) →{" "}
-              <em>Port forwarding / NAT / Virtual server</em>.
+              <em>Redirection de ports / NAT / Serveur virtuel</em>).
             </li>
             <li>
-              Forward public <strong>TCP 25</strong> to this server's LAN IP, port 25.
+              Redirigez le port public <strong>TCP 25</strong> vers l’adresse privée de ce serveur,
+              port 25.
             </li>
             <li>
-              Do <strong>not</strong> forward the web or API ports — that keeps accounts, DMs, and
-              the admin panel private.
+              Ne redirigez <strong>pas</strong> les ports de l’application ou de l’API : les
+              comptes, les conversations et l’administration restent ainsi privés.
             </li>
             <li>
-              If the server has a firewall, allow TCP 25 explicitly using the firewall rules
-              appropriate for your host.
+              Si un pare-feu est actif, autorisez explicitement TCP 25 avec les règles adaptées à
+              votre système.
             </li>
             <li>
-              Give your server a static LAN IP or a DHCP reservation so the forward doesn't break on
-              reboot.
+              Attribuez une adresse privée fixe au serveur, ou créez une réservation DHCP, afin que
+              la redirection survive aux redémarrages.
             </li>
           </ol>
           <div className="text-xs text-muted-foreground">
-            DDNS cannot bypass CGNAT or an ISP block on port 25. This page can prove the local SMTP
-            listener is healthy, but it deliberately does not call your public DDNS address from
-            inside the same network: that is only a router NAT-loopback test. Verify public TCP 25
-            from cellular, a VPS, or another genuinely external network, then send a real message.
+            Le DDNS ne contourne ni le CGNAT ni un blocage du port 25 par votre opérateur. Ce test
+            confirme uniquement le fonctionnement local du service SMTP. Vérifiez ensuite le port
+            public depuis un réseau mobile, un VPS ou un autre réseau réellement extérieur.
           </div>
 
           <div className="flex gap-2 items-center">
             <code className="min-w-0 flex-1 truncate rounded border border-border bg-card px-3 py-2 text-sm text-gold">
-              {mailHostname || "MAIL_HOSTNAME is not configured"}
+              {mailHostname || "MAIL_HOSTNAME n’est pas configuré"}
             </code>
             <Button
               onClick={testAllPorts}
               disabled={portResults[25]?.loading}
               className="bg-gold text-background whitespace-nowrap"
             >
-              Test local receiver
+              Tester la réception locale
             </Button>
           </div>
 
@@ -423,7 +448,7 @@ export function SetupWizard() {
                     <div className="text-xs text-muted-foreground">{p.why}</div>
                     {r && !r.loading && (
                       <div className="text-[11px] mt-1 font-mono text-muted-foreground truncate">
-                        {r.open ? (r.banner ? r.banner : "connection accepted") : r.error}
+                        {r.open ? (r.banner ? r.banner : "connexion acceptée") : r.error}
                       </div>
                     )}
                   </div>
@@ -431,9 +456,9 @@ export function SetupWizard() {
                     state={state}
                     label={
                       state === "ok"
-                        ? "Listener ready"
+                        ? "Service prêt"
                         : state === "fail"
-                          ? "Local check failed"
+                          ? "Échec du test local"
                           : undefined
                     }
                   />
@@ -443,29 +468,74 @@ export function SetupWizard() {
                     disabled={r?.loading}
                     onClick={() => testPort(p.port, p.banner)}
                   >
-                    Test
+                    Tester
                   </Button>
                 </div>
               );
             })}
           </div>
 
+          <div className="rounded-2xl border border-border bg-card/60 p-4 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">Envoi vers Internet</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  Connexion sortante chiffrée vers le relais SMTP configuré. Aucun port 465 ou 587
+                  ne doit être ouvert sur le routeur.
+                </div>
+              </div>
+              <Pill
+                state={
+                  outboundCheck.isPending
+                    ? "run"
+                    : outboundCheck.isSuccess && outboundCheck.data.enabled
+                      ? "ok"
+                      : outboundCheck.isError
+                        ? "fail"
+                        : "idle"
+                }
+                label={
+                  outboundCheck.isSuccess
+                    ? outboundCheck.data.enabled
+                      ? "Authentifié"
+                      : "Désactivé"
+                    : undefined
+                }
+              />
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => outboundCheck.mutate()}
+              disabled={outboundCheck.isPending || !env?.env.OUTBOUND_SMTP_ENABLED}
+            >
+              {outboundCheck.isPending ? "Connexion…" : "Tester le relais authentifié"}
+            </Button>
+            {!env?.env.OUTBOUND_SMTP_ENABLED && (
+              <p className="text-xs text-amber-200/80">
+                Relancez l’installateur et activez l’envoi sortant lorsque vous aurez les
+                identifiants fournis par votre relais SMTP.
+              </p>
+            )}
+          </div>
+
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => setStep(1)}>
-              Back
+              Retour
             </Button>
             <Button onClick={() => setStep(3)} className="bg-gold text-background">
-              Next: add domains
+              Suivant : domaines
             </Button>
           </div>
         </div>
       )}
 
       {step === 3 && (
-        <div className="noir-panel rounded-xl p-8 space-y-4">
-          <h2 className="font-display text-2xl text-gold">Add your domains</h2>
+        <div className="noir-panel rounded-3xl p-8 space-y-4">
+          <h2 className="font-display text-2xl text-gold">Ajouter vos domaines</h2>
           <p className="text-sm text-muted-foreground">
-            Add as many domains as you own. Users will pick from these when creating a mailbox.
+            Ajoutez les domaines que vous possédez. Ils seront proposés lors de la création d’une
+            adresse.
           </p>
           <div className="flex gap-2">
             <Input
@@ -475,43 +545,43 @@ export function SetupWizard() {
               onKeyDown={(e) => e.key === "Enter" && addDomain.mutate()}
             />
             <Button onClick={() => addDomain.mutate()} className="bg-gold text-background">
-              Add
+              Ajouter
             </Button>
           </div>
           <div className="rounded-lg border border-border divide-y divide-border">
             {(domains ?? []).map((d) => (
               <div key={d.id} className="p-3 flex items-center justify-between">
                 <span className="font-mono text-sm">{d.name}</span>
-                <span className="text-xs text-muted-foreground">added</span>
+                <span className="text-xs text-muted-foreground">ajouté</span>
               </div>
             ))}
             {(!domains || domains.length === 0) && (
               <div className="p-8 text-center text-sm text-muted-foreground">
-                No domains yet — add at least one to continue.
+                Aucun domaine — ajoutez-en au moins un pour continuer.
               </div>
             )}
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => setStep(2)}>
-              Back
+              Retour
             </Button>
             <Button
               onClick={() => setStep(4)}
               disabled={!domains?.length}
               className="bg-gold text-background"
             >
-              Next: DNS records
+              Suivant : DNS
             </Button>
           </div>
         </div>
       )}
 
       {step === 4 && (
-        <div className="noir-panel rounded-xl p-8 space-y-4">
-          <h2 className="font-display text-2xl text-gold">DNS records</h2>
+        <div className="noir-panel rounded-3xl p-8 space-y-4">
+          <h2 className="font-display text-2xl text-gold">Enregistrements DNS</h2>
           <p className="text-sm text-muted-foreground">
-            For each receiving domain, point MX at the configured DDNS hostname. The MX target
-            itself must resolve directly to your public address.
+            Pour chaque domaine, faites pointer l’enregistrement MX vers le nom DDNS configuré. La
+            cible MX doit elle-même résoudre directement vers votre adresse publique.
           </p>
           <div className="flex gap-2 flex-wrap">
             {(domains ?? []).map((d) => (
@@ -524,24 +594,30 @@ export function SetupWizard() {
               </button>
             ))}
           </div>
-          {selectedDomain && <RecordsTable domain={selectedDomain} mailHostname={mailHostname} />}
+          {selectedDomain && (
+            <RecordsTable
+              domain={selectedDomain}
+              mailHostname={mailHostname}
+              outboundEnabled={Boolean(env?.env.OUTBOUND_SMTP_ENABLED)}
+            />
+          )}
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => setStep(3)}>
-              Back
+              Retour
             </Button>
             <Button onClick={() => setStep(5)} className="bg-gold text-background">
-              Next: verify
+              Suivant : vérifier
             </Button>
           </div>
         </div>
       )}
 
       {step === 5 && (
-        <div className="noir-panel rounded-xl p-8 space-y-4">
-          <h2 className="font-display text-2xl text-gold">Verify DNS propagation</h2>
+        <div className="noir-panel rounded-3xl p-8 space-y-4">
+          <h2 className="font-display text-2xl text-gold">Vérifier la propagation DNS</h2>
           <p className="text-sm text-muted-foreground">
-            Checks use the DNS resolver configured on this server. Propagation can take a few
-            minutes to a few hours.
+            Les vérifications utilisent le résolveur DNS du serveur. La propagation peut prendre de
+            quelques minutes à plusieurs heures.
           </p>
           {(domains ?? []).map((d) => (
             <div key={d.id} className="rounded-lg border border-border p-4 space-y-3">
@@ -553,7 +629,7 @@ export function SetupWizard() {
                   onClick={() => checkAll(d.name)}
                   disabled={!mailHostname}
                 >
-                  Check now
+                  Vérifier maintenant
                 </Button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
@@ -561,17 +637,19 @@ export function SetupWizard() {
                   {
                     k: "MX",
                     label: `${d.name} MX`,
-                    expectLabel: mailHostname || "MAIL_HOSTNAME missing",
+                    expectLabel: mailHostname || "MAIL_HOSTNAME manquant",
                   },
                   {
                     k: "MAIL_A",
-                    label: `${mailHostname || "MX host"} A`,
-                    expectLabel: "At least one IPv4 address",
+                    label: `${mailHostname || "Cible MX"} A`,
+                    expectLabel: serverIp
+                      ? `Adresse IPv4 publique attendue : ${serverIp}`
+                      : "Au moins une adresse IPv4",
                   },
                   {
                     k: "MAIL_AAAA",
-                    label: `${mailHostname || "MX host"} AAAA`,
-                    expectLabel: "Optional; remove it unless IPv6 reaches this server",
+                    label: `${mailHostname || "Cible MX"} AAAA`,
+                    expectLabel: "Facultatif : supprimez-le si IPv6 n’atteint pas ce serveur",
                   },
                 ].map((row) => {
                   const c = checks[`${d.name}:${row.k}`];
@@ -583,13 +661,13 @@ export function SetupWizard() {
                         className={`mt-1 font-medium ${c?.loading ? "text-muted-foreground" : c?.ok ? "text-emerald-400" : c ? "text-red-400" : "text-muted-foreground"}`}
                       >
                         {c?.loading
-                          ? "Checking…"
+                          ? "Vérification…"
                           : c?.ok
-                            ? "✓ Found"
+                            ? "✓ Trouvé"
                             : c
                               ? optional
-                                ? "Not published (OK)"
-                                : "✗ Not found"
+                                ? "Non publié (correct)"
+                                : "✗ Introuvable"
                               : "—"}
                       </div>
                       <div
@@ -606,25 +684,25 @@ export function SetupWizard() {
           ))}
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => setStep(4)}>
-              Back
+              Retour
             </Button>
             <Button onClick={() => setStep(6)} className="bg-gold text-background">
-              Next: test mail
+              Suivant : tester
             </Button>
           </div>
         </div>
       )}
 
       {step === 6 && (
-        <div className="noir-panel rounded-xl p-8 space-y-5">
-          <h2 className="font-display text-2xl text-gold">Test mail delivery</h2>
+        <div className="noir-panel rounded-[1.75rem] p-8 space-y-5">
+          <h2 className="font-display text-2xl text-gold">Tester la réception</h2>
           <p className="text-sm text-muted-foreground">
-            Drop a message straight into a real mailbox to confirm storage and inbox routing. Create
-            the address first under <em>Mailboxes</em>.
+            Injectez un message dans une adresse réelle afin de confirmer son stockage et son
+            classement. Créez d’abord cette adresse dans <em>Adresses</em>.
           </p>
           <div className="flex gap-2">
             <Input
-              placeholder="you@yourdomain.com"
+              placeholder="vous@votredomaine.fr"
               value={testAddr}
               onChange={(e) => setTestAddr(e.target.value)}
             />
@@ -633,52 +711,53 @@ export function SetupWizard() {
               disabled={!testAddr.trim() || delivery.isPending}
               className="bg-gold text-background whitespace-nowrap"
             >
-              {delivery.isPending ? "Injecting…" : "Inject storage test"}
+              {delivery.isPending ? "Injection…" : "Créer un message de test"}
             </Button>
           </div>
-          <div className="rounded-lg bg-card p-4 border border-border text-sm space-y-2">
-            <div className="font-medium">Then test the real world:</div>
+          <div className="rounded-2xl bg-card p-4 border border-border text-sm space-y-2">
+            <div className="font-medium">Testez ensuite depuis Internet :</div>
             <ol className="pl-5 list-decimal marker:text-gold text-muted-foreground space-y-1">
               <li>
-                From an outside account (Gmail etc.), email that address — it should land in the
-                inbox within a minute.
+                Envoyez un e-mail vers cette adresse depuis un compte extérieur : il doit apparaître
+                dans la minute.
               </li>
-              <li>Confirm it appears in the correct JorgardeMail mailbox.</li>
+              <li>Confirmez qu’il apparaît dans la bonne adresse JorgardeMail.</li>
               <li>
-                If nothing arrives, inspect SMTP logs, test TCP 25 from outside your network, and
-                re-check the MX target.
+                Si rien n’arrive, consultez les journaux SMTP, testez TCP 25 depuis un autre réseau
+                et vérifiez de nouveau la cible MX.
               </li>
             </ol>
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" onClick={() => setStep(5)}>
-              Back
+              Retour
             </Button>
             <Button onClick={() => setStep(7)} className="bg-gold text-background">
-              Finish
+              Terminer
             </Button>
           </div>
         </div>
       )}
 
       {step === 7 && (
-        <div className="noir-panel rounded-xl p-8 space-y-4 text-center">
+        <div className="noir-panel rounded-[1.75rem] p-8 space-y-4 text-center">
           <div className="text-5xl">✨</div>
-          <h2 className="font-display text-3xl text-gold">You're live</h2>
+          <h2 className="font-display text-3xl text-gold">Tout est prêt</h2>
           <p className="text-muted-foreground">
-            Your users can now create permanent or temporary addresses across {domains?.length ?? 0}{" "}
-            domain{domains?.length === 1 ? "" : "s"}. Internet mail is received on port 25 and
-            internal DMs stay inside this server.
+            Vos membres peuvent désormais créer des adresses permanentes ou temporaires sur{" "}
+            {domains?.length ?? 0} domaine{domains?.length === 1 ? "" : "s"}. Les e-mails entrants
+            utilisent TCP 25, l’envoi passe par le relais SMTP configuré et les conversations
+            restent privées.
           </p>
           <div className="flex gap-2 justify-center">
             <Button variant="outline" onClick={() => setStep(0)}>
-              Restart wizard
+              Redémarrer l’assistant
             </Button>
             <Button
               className="bg-gold text-background"
               onClick={() => (window.location.href = "/all")}
             >
-              Go to inbox
+              Ouvrir la réception
             </Button>
           </div>
         </div>
@@ -687,34 +766,59 @@ export function SetupWizard() {
   );
 }
 
-function RecordsTable({ domain, mailHostname }: { domain: string; mailHostname: string }) {
-  const mxTarget = mailHostname || "<your DDNS mail hostname>";
+function RecordsTable({
+  domain,
+  mailHostname,
+  outboundEnabled,
+}: {
+  domain: string;
+  mailHostname: string;
+  outboundEnabled: boolean;
+}) {
+  const mxTarget = mailHostname || "<nom DDNS de votre serveur mail>";
   const rows = [
     {
       host: "@",
       type: "MX",
       value: `10 ${mxTarget}.`,
-      note: "Required: route inbound mail to this server",
+      note: "Obligatoire : achemine les e-mails entrants vers ce serveur",
     },
     {
       host: "@",
       type: "TXT",
-      value: "v=spf1 -all",
-      note: "Optional only if this domain never sends email from any provider",
+      value: outboundEnabled ? "Valeur SPF exacte fournie par le relais SMTP" : "v=spf1 -all",
+      note: outboundEnabled
+        ? "Obligatoire pour l'envoi : n'inventez pas le mécanisme include, copiez celui du fournisseur"
+        : "Indique que ce domaine n’envoie aucun e-mail",
+      copyable: !outboundEnabled,
+    },
+    {
+      host: "sélecteur._domainkey",
+      type: "TXT/CNAME",
+      value: outboundEnabled
+        ? "Enregistrement DKIM fourni par le relais SMTP"
+        : "Non requis sans envoi",
+      note: "Le nom, le type et la valeur dépendent du relais ; publiez-les sans modification",
+      copyable: false,
     },
     {
       host: "_dmarc",
       type: "TXT",
-      value: `v=DMARC1; p=reject; rua=mailto:postmaster@${domain}`,
-      note: "Optional if the domain never sends; create the postmaster mailbox first",
+      value: outboundEnabled
+        ? `v=DMARC1; p=none; rua=mailto:postmaster@${domain}`
+        : `v=DMARC1; p=reject; rua=mailto:postmaster@${domain}`,
+      note: outboundEnabled
+        ? "Commencez en observation, puis renforcez la politique après validation SPF et DKIM"
+        : "Politique stricte adaptée à un domaine qui n'envoie rien",
+      copyable: true,
     },
   ];
   return (
     <div className="rounded-lg border border-border overflow-hidden">
       <div className="grid grid-cols-[80px_60px_1fr_auto] gap-3 px-3 py-2 bg-card text-[11px] uppercase tracking-wider text-muted-foreground">
-        <span>Host</span>
+        <span>Nom</span>
         <span>Type</span>
-        <span>Value</span>
+        <span>Valeur</span>
         <span></span>
       </div>
       {rows.map((r, i) => (
@@ -730,7 +834,7 @@ function RecordsTable({ domain, mailHostname }: { domain: string; mailHostname: 
             </div>
             <div className="text-xs text-muted-foreground">{r.note}</div>
           </div>
-          <CopyBtn value={r.value} />
+          {r.copyable !== false ? <CopyBtn value={r.value} /> : <span />}
         </div>
       ))}
     </div>
