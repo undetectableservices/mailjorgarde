@@ -21,7 +21,7 @@ export const Route = createFileRoute("/api/internal/outbound-health")({
 
         const { getOutboundRelayStatus, publicOutboundError, verifyOutboundRelay } =
           await import("@/lib/outbound-mail.server");
-        const status = getOutboundRelayStatus();
+        const status = await getOutboundRelayStatus();
         if (!status.enabled) {
           return Response.json({ ok: true, enabled: false, configured: false });
         }

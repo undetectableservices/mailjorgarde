@@ -529,6 +529,14 @@ export type Database = {
         Args: Record<PropertyKey, never>;
         Returns: Database["public"]["Tables"]["profiles"]["Row"];
       };
+      get_jellyfin_runtime_configuration: {
+        Args: Record<PropertyKey, never>;
+        Returns: Json;
+      };
+      get_smtp_runtime_configuration: {
+        Args: Record<PropertyKey, never>;
+        Returns: Json;
+      };
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"];
@@ -572,6 +580,32 @@ export type Database = {
       send_dm: {
         Args: { p_body: string; p_thread_id: string };
         Returns: Database["public"]["Tables"]["dms"]["Row"];
+      };
+      set_jellyfin_runtime_configuration: {
+        Args: {
+          p_api_key_encrypted: string | null;
+          p_enabled: boolean;
+          p_expected_revision: number;
+          p_managed: boolean;
+          p_updated_by: string;
+          p_url: string | null;
+        };
+        Returns: Json;
+      };
+      set_smtp_runtime_configuration: {
+        Args: {
+          p_enabled: boolean;
+          p_expected_revision: number;
+          p_host: string | null;
+          p_managed: boolean;
+          p_max_recipients: number;
+          p_password_encrypted: string | null;
+          p_port: number;
+          p_security: string;
+          p_updated_by: string;
+          p_username: string | null;
+        };
+        Returns: Json;
       };
       set_mailbox_lifetime: {
         Args: { p_mailbox_id: string; p_ttl_minutes?: number | null };

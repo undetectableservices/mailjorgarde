@@ -70,7 +70,7 @@ function AdminPage() {
       <PageHeader
         eyebrow="Administration privée"
         title="Centre de contrôle"
-        description="Gérez les utilisateurs, les domaines, la réception et les annonces depuis un seul espace."
+        description="Configurez Jellyfin, le relais SMTP, les domaines, les diagnostics et les utilisateurs depuis un seul espace."
         actions={
           <div className="premium-badge normal-case tracking-normal">
             <ShieldCheck className="size-3.5" /> Administrateur
@@ -83,7 +83,7 @@ function AdminPage() {
             <TabsTrigger key={item} value={item} className="capitalize">
               {
                 {
-                  setup: "Configuration",
+                  setup: "Contrôle",
                   users: "Utilisateurs",
                   domains: "Domaines",
                   broadcast: "Annonce",

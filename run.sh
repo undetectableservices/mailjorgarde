@@ -309,10 +309,9 @@ compose_for_mode() {
 require_complete_config() {
   local key value missing=()
   for key in POSTGRES_PASSWORD AUTHENTICATOR_PASSWORD AUTH_ADMIN_PASSWORD JWT_SECRET \
-             ANON_KEY SERVICE_ROLE_KEY INBOUND_WEBHOOK_SECRET INSTALL_MODE \
+             ANON_KEY SERVICE_ROLE_KEY INBOUND_WEBHOOK_SECRET RUNTIME_CONFIG_KEY_B64 INSTALL_MODE \
              LAN_BIND_ADDRESS WEB_HOSTNAME MAIL_HOSTNAME SMTP_BIND_ADDRESS \
-             SUPABASE_PUBLIC_URL SITE_URL SMTP_TLS_DIR JELLYFIN_URL JELLYFIN_API_KEY \
-             OUTBOUND_SMTP_ENABLED; do
+             SUPABASE_PUBLIC_URL SITE_URL SMTP_TLS_DIR OUTBOUND_SMTP_ENABLED; do
     value="$(get_var "$key")"
     [[ -n "$value" ]] || missing+=("$key")
   done
@@ -426,6 +425,7 @@ down_all() {
     ANON_KEY="${ANON_KEY:-removal-placeholder}" \
     SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY:-removal-placeholder}" \
     INBOUND_WEBHOOK_SECRET="${INBOUND_WEBHOOK_SECRET:-removal-placeholder-secret-32-bytes}" \
+    RUNTIME_CONFIG_KEY_B64="${RUNTIME_CONFIG_KEY_B64:-removal-placeholder-runtime-config-key}" \
     SUPABASE_PUBLIC_URL="${SUPABASE_PUBLIC_URL:-http://127.0.0.1:6969}" \
     SITE_URL="${SITE_URL:-http://127.0.0.1:6969}" \
     JELLYFIN_URL="${JELLYFIN_URL:-http://127.0.0.1:8096}" \
@@ -567,6 +567,17 @@ ensure_secret() {
   if [[ ${#value} -lt $minimum ]]; then set_var "$key" "$(rand_pw)"; fi
 }
 
+ensure_runtime_config_key() {
+  local value
+  value="$(get_var RUNTIME_CONFIG_KEY_B64)"
+  if [[ -z "$value" ]]; then
+    value="$(openssl rand -base64 32 | tr -d '\r\n')"
+    set_var RUNTIME_CONFIG_KEY_B64 "$value"
+  fi
+  [[ "$value" =~ ^[A-Za-z0-9+/]{43}=$ ]] \
+    || die "RUNTIME_CONFIG_KEY_B64 doit être une clé aléatoire de 32 octets encodée en Base64. Restaurez la configuration si cette clé existait déjà."
+}
+
 detect_legacy_db_volume() {
   docker volume inspect "$DB_VOLUME_NAME" >/dev/null 2>&1 && return 0
   local raw="${MAILJORGARDE_LEGACY_PROJECT_BASENAME:-}" normalized candidate found=""
@@ -644,40 +655,27 @@ configure_install() {
     [[ "$acme" =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || die "ACME_EMAIL n’est pas valide."
   fi
 
-  local jellyfin_url jellyfin_key jellyfin_replacement
-  if [[ $REBUILD -eq 1 && $NONINTERACTIVE -eq 0 && -t 0 ]]; then
-    jellyfin_url="$(get_var JELLYFIN_URL)"
-    if [[ -n "$jellyfin_url" ]]; then
-      jellyfin_replacement=""
-      read -r -p "  Adresse Jellyfin [${jellyfin_url}] (Entrée pour conserver) : " jellyfin_replacement || true
-      if [[ -n "$jellyfin_replacement" ]]; then
-        set_var JELLYFIN_URL "$jellyfin_replacement"
-      fi
-    fi
-
-    jellyfin_key="$(get_var JELLYFIN_API_KEY)"
-    if [[ -n "$jellyfin_key" ]]; then
-      jellyfin_replacement=""
-      read -r -s -p "  Nouvelle clé API Jellyfin (Entrée pour conserver l'actuelle): " jellyfin_replacement || true
-      printf '\n' >&2
-      if [[ -n "$jellyfin_replacement" ]]; then
-        set_var JELLYFIN_API_KEY "$jellyfin_replacement"
-      fi
-    fi
-  fi
-  prompt_value JELLYFIN_URL \
-    "Adresse de Jellyfin accessible depuis Docker (pas localhost)" \
-    "${JELLYFIN_URL:-http://${lan}:8096}" 1
-  prompt_secret_value JELLYFIN_API_KEY "Clé API Jellyfin (saisie masquée)" 1
+  # Jellyfin is optional at install time. Existing environment values remain a
+  # compatible fallback; new deployments configure it after the administrator
+  # account exists, from the authenticated administration panel.
+  local jellyfin_url jellyfin_key
   jellyfin_url="$(get_var JELLYFIN_URL)"
-  jellyfin_url="${jellyfin_url%/}"
-  validate_jellyfin_url "$jellyfin_url" \
-    || die "JELLYFIN_URL doit être une adresse HTTP(S) accessible depuis Docker ; utilisez http://${lan}:8096 pour Jellyfin sur cet hôte, pas localhost."
-  set_var JELLYFIN_URL "$jellyfin_url"
   jellyfin_key="$(get_var JELLYFIN_API_KEY)"
-  [[ ${#jellyfin_key} -ge 16 && ${#jellyfin_key} -le 256 \
-     && "$jellyfin_key" =~ ^[A-Za-z0-9._~-]+$ ]] \
-    || die "JELLYFIN_API_KEY doit contenir 16 à 256 caractères compatibles avec une URL. Créez-la dans Tableau de bord Jellyfin > Avancé > Clés API."
+  if [[ -n "$jellyfin_url" && -n "$jellyfin_key" ]]; then
+    jellyfin_url="${jellyfin_url%/}"
+    if validate_jellyfin_url "$jellyfin_url" \
+       && [[ ${#jellyfin_key} -ge 16 && ${#jellyfin_key} -le 256 \
+          && "$jellyfin_key" =~ ^[A-Za-z0-9._~-]+$ ]]; then
+      set_var JELLYFIN_URL "$jellyfin_url"
+      ok "Conservation de la configuration Jellyfin de l'installateur comme solution de secours"
+    else
+      warn "La configuration Jellyfin historique est invalide ; elle est conservée pour diagnostic, mais ne bloque plus l'installation. Corrigez-la dans le panneau administrateur."
+    fi
+  elif [[ -n "$jellyfin_url" || -n "$jellyfin_key" ]]; then
+    warn "La configuration Jellyfin historique est incomplète et sera ignorée. Terminez-la dans le panneau administrateur."
+  else
+    log "Jellyfin sera configuré après l'installation dans le panneau administrateur (sur cet hôte : http://host.docker.internal:8096)."
+  fi
 
   local outbound_enabled outbound_host outbound_port outbound_security
   local outbound_user outbound_password outbound_password_b64 outbound_limit outbound_action
@@ -836,6 +834,9 @@ configure_install() {
     set_var SERVICE_ROLE_KEY "$(mint_jwt service_role "$jwt")"
     ensure_secret INBOUND_WEBHOOK_SECRET 32
   fi
+  # Protect panel-managed secrets with a dedicated key. Generate it once and
+  # retain it on rebuilds; the root-only environment backup preserves it.
+  ensure_runtime_config_key
 
   local tls_dir
   tls_dir="$(get_var SMTP_TLS_DIR)"; tls_dir="${tls_dir:-${DEFAULT_STATE_DIR}/tls}"
@@ -1101,8 +1102,9 @@ if ! "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 240; then
 fi
 
 log "Validation de l'inscription privée via Jellyfin"
-"${COMPOSE[@]}" exec -T web node scripts/check-jellyfin.mjs \
-  || die "La validation Jellyfin a échoué. Vérifiez JELLYFIN_URL, la clé API et l'accessibilité de Jellyfin depuis Docker."
+if ! "${COMPOSE[@]}" exec -T web node scripts/check-jellyfin.mjs; then
+  warn "La configuration Jellyfin historique n'est pas utilisable. L'installation continue ; configurez et testez Jellyfin dans le panneau administrateur."
+fi
 
 json_escape() {
   local value="$1"

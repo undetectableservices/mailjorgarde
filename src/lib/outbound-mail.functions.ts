@@ -35,11 +35,6 @@ function deduplicateRecipients(to: string[], cc: string[], bcc: string[]) {
   return { to: unique(to), cc: unique(cc), bcc: unique(bcc) };
 }
 
-function configuredRecipientLimit() {
-  const parsed = Number(process.env.OUTBOUND_MAX_RECIPIENTS || "25");
-  return Number.isInteger(parsed) && parsed >= 1 && parsed <= 50 ? parsed : 25;
-}
-
 function signatureBody(body: string, signature: string | null, placement: string | null): string {
   const cleanSignature = (signature || "").trim();
   if (!cleanSignature || placement === "none") return body;
@@ -60,9 +55,11 @@ export const getOutboundRelayInfo = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async () => {
     const { getOutboundRelayStatus } = await import("./outbound-mail.server");
+    const status = await getOutboundRelayStatus();
     return {
-      ...getOutboundRelayStatus(),
-      maxRecipients: configuredRecipientLimit(),
+      enabled: status.enabled,
+      configured: status.configured,
+      maxRecipients: status.maxRecipients,
     };
   });
 
@@ -71,12 +68,18 @@ export const sendOutboundEmail = createServerFn({ method: "POST" })
   .validator((data: unknown) => outboundMessageSchema.parse(data))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { deliverOutboundMessage, publicOutboundError } = await import("./outbound-mail.server");
+    const { deliverOutboundMessage, getOutboundRelayStatus, publicOutboundError } =
+      await import("./outbound-mail.server");
+    const relayStatus = await getOutboundRelayStatus();
+    if (!relayStatus.enabled || !relayStatus.configured) {
+      throw new Error("L'envoi externe n'est pas encore configuré par l'administrateur.");
+    }
+    const recipientLimit = relayStatus.maxRecipients;
 
     const { data: mailbox, error: mailboxError } = await context.supabase
       .from("mailboxes")
       .select(
-        "id, user_id, local_part, display_name, signature, signature_placement, auto_bcc, is_temp, expires_at, domain:domains(name)",
+        "id, user_id, local_part, display_name, signature, signature_placement, auto_bcc, is_temp, expires_at, domain:domains(name, expires_at)",
       )
       .eq("id", data.mailboxId)
       .eq("user_id", context.userId)
@@ -89,6 +92,9 @@ export const sendOutboundEmail = createServerFn({ method: "POST" })
       throw new Error("Cette adresse d'envoi n'est plus disponible.");
     }
     if (!mailbox.domain?.name) throw new Error("Le domaine de cette adresse n'est pas disponible.");
+    if (mailbox.domain.expires_at && Date.parse(mailbox.domain.expires_at) <= Date.now()) {
+      throw new Error("Le domaine de cette adresse d'envoi a expiré.");
+    }
 
     const autoBcc = mailbox.auto_bcc ? emailAddress.safeParse(mailbox.auto_bcc.trim()) : null;
     const recipients = deduplicateRecipients(data.to, data.cc, [
@@ -97,10 +103,8 @@ export const sendOutboundEmail = createServerFn({ method: "POST" })
     ]);
     const recipientCount = recipients.to.length + recipients.cc.length + recipients.bcc.length;
     if (recipients.to.length === 0) throw new Error("Ajoutez au moins un destinataire principal.");
-    if (recipientCount > configuredRecipientLimit()) {
-      throw new Error(
-        `Un message ne peut pas dépasser ${configuredRecipientLimit()} destinataires.`,
-      );
+    if (recipientCount > recipientLimit) {
+      throw new Error(`Un message ne peut pas dépasser ${recipientLimit} destinataires.`);
     }
 
     const { data: reservation, error: reservationError } = await supabaseAdmin.rpc(
@@ -138,6 +142,12 @@ export const sendOutboundEmail = createServerFn({ method: "POST" })
     const fromAddress = `${mailbox.local_part}@${mailbox.domain.name}`.toLowerCase();
     const fromName = (mailbox.display_name || mailbox.local_part).trim().slice(0, 100);
     const body = signatureBody(data.body, mailbox.signature, mailbox.signature_placement);
+    if (Buffer.byteLength(body, "utf8") > 200_000) {
+      throw new Error("Le message et sa signature dépassent la taille autorisée.");
+    }
+    const visibleRecipients = new Set(
+      [...data.to, ...data.cc, ...data.bcc].map((address) => address.toLowerCase()),
+    );
 
     try {
       const delivered = await deliverOutboundMessage({
@@ -207,8 +217,12 @@ export const sendOutboundEmail = createServerFn({ method: "POST" })
         ok: true,
         duplicate: false,
         archived: !archiveError,
-        accepted: delivered.accepted,
-        rejected: delivered.rejected,
+        accepted: delivered.accepted.filter((address) =>
+          visibleRecipients.has(address.toLowerCase()),
+        ),
+        rejected: delivered.rejected.filter((address) =>
+          visibleRecipients.has(address.toLowerCase()),
+        ),
       };
     } catch (error) {
       const safe = publicOutboundError(error, true);

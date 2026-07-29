@@ -4,7 +4,6 @@ import { z } from "zod";
 
 const USERNAME_EMAIL_SUFFIX = "@users.jorgardemail.local";
 const MAX_REQUEST_BYTES = 1_024;
-const MAX_JELLYFIN_RESPONSE_BYTES = 1024 * 1024;
 const MIN_RESPONSE_TIME_MS = 750;
 const RATE_WINDOW_MS = 15 * 60_000;
 const MAX_IP_ATTEMPTS = 8;
@@ -23,15 +22,6 @@ const registration = z
   .strict();
 
 type RateBucket = { startedAt: number; attempts: number };
-type JellyfinUser = {
-  Id?: unknown;
-  Name?: unknown;
-  Policy?: { IsDisabled?: unknown } | null;
-};
-type JellyfinAuthentication = {
-  AccessToken?: unknown;
-  User?: { Id?: unknown; Name?: unknown } | null;
-};
 
 const rateBuckets = new Map<string, RateBucket>();
 const registrationLocks = new Set<string>();
@@ -81,114 +71,6 @@ function preferredInternalUsername(jellyfinName: string, jellyfinId: string): st
   return INTERNAL_USERNAME_RE.test(direct)
     ? direct
     : hashedInternalUsername(jellyfinName, jellyfinId);
-}
-
-function configuredJellyfin(): { baseUrl: string; apiKey: string } {
-  const rawUrl = (process.env.JELLYFIN_URL || "").trim();
-  const apiKey = (process.env.JELLYFIN_API_KEY || "").trim();
-  if (!rawUrl || !/^[a-zA-Z0-9._~-]{16,256}$/.test(apiKey)) {
-    throw new Error("Jellyfin registration is not configured");
-  }
-
-  const url = new URL(rawUrl);
-  if (
-    !["http:", "https:"].includes(url.protocol) ||
-    url.username ||
-    url.password ||
-    url.search ||
-    url.hash
-  ) {
-    throw new Error("JELLYFIN_URL must be a plain HTTP(S) server URL");
-  }
-  return { baseUrl: url.toString().replace(/\/$/, ""), apiKey };
-}
-
-async function readBoundedText(response: Response, maximum: number): Promise<string> {
-  const declared = response.headers.get("content-length");
-  if (declared && Number(declared) > maximum) throw new Error("Jellyfin response is too large");
-  if (!response.body) return "";
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let result = "";
-  let size = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > maximum) {
-        await reader.cancel("response too large").catch(() => {});
-        throw new Error("Jellyfin response is too large");
-      }
-      result += decoder.decode(value, { stream: true });
-    }
-    return result + decoder.decode();
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-async function jellyfinJson<T>(response: Response, maximum: number): Promise<T> {
-  const raw = await readBoundedText(response, maximum);
-  return JSON.parse(raw) as T;
-}
-
-function jellyfinClientAuthorization(token?: string, deviceId = "jorgardemail-server"): string {
-  const fields = [
-    'MediaBrowser Client="JorgardeMail"',
-    'Device="JorgardeMail Server"',
-    `DeviceId="${deviceId.replace(/[^a-zA-Z0-9_-]/g, "")}"`,
-    'Version="1.0.0"',
-  ];
-  if (token) fields.push(`Token="${token.replace(/["\\]/g, "")}"`);
-  return fields.join(", ");
-}
-
-async function fetchJellyfinUsers(baseUrl: string, apiKey: string): Promise<JellyfinUser[]> {
-  const response = await fetch(`${baseUrl}/Users`, {
-    headers: {
-      accept: "application/json",
-      authorization: jellyfinClientAuthorization(apiKey),
-      "x-emby-token": apiKey,
-    },
-    signal: AbortSignal.timeout(7_000),
-  });
-  if (!response.ok) throw new Error(`Jellyfin user lookup failed (HTTP ${response.status})`);
-  const users = await jellyfinJson<unknown>(response, MAX_JELLYFIN_RESPONSE_BYTES);
-  if (!Array.isArray(users)) throw new Error("Jellyfin returned an invalid user list");
-  return users as JellyfinUser[];
-}
-
-async function authenticateJellyfinUser(
-  baseUrl: string,
-  username: string,
-  password: string,
-  deviceId: string,
-): Promise<JellyfinAuthentication | null> {
-  const response = await fetch(`${baseUrl}/Users/AuthenticateByName`, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      authorization: jellyfinClientAuthorization(undefined, deviceId),
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ Username: username, Pw: password }),
-    signal: AbortSignal.timeout(7_000),
-  });
-  if (response.status === 401) return null;
-  if (!response.ok) throw new Error(`Jellyfin authentication failed (HTTP ${response.status})`);
-  return jellyfinJson<JellyfinAuthentication>(response, 256 * 1024);
-}
-
-async function revokeJellyfinToken(baseUrl: string, token: string): Promise<void> {
-  await fetch(`${baseUrl}/Sessions/Logout`, {
-    method: "POST",
-    headers: {
-      authorization: jellyfinClientAuthorization(token),
-    },
-    signal: AbortSignal.timeout(3_000),
-  }).catch(() => {});
 }
 
 function requestIdentity(request: Request): string {
@@ -396,7 +278,17 @@ async function handleRegistration(request: Request): Promise<Response> {
   }
 
   try {
-    const { baseUrl, apiKey } = configuredJellyfin();
+    const { loadEffectiveJellyfinConfiguration } =
+      await import("@/lib/runtime-configuration.server");
+    const {
+      authenticateJellyfinUser,
+      fetchJellyfinUsers,
+      normalizeJellyfinConfiguration,
+      revokeJellyfinToken,
+    } = await import("@/lib/jellyfin.server");
+    const effective = await loadEffectiveJellyfinConfiguration();
+    if (!effective.enabled) throw new Error("Jellyfin registration is disabled");
+    const { baseUrl, apiKey } = normalizeJellyfinConfiguration(effective.url, effective.apiKey);
     const users = await fetchJellyfinUsers(baseUrl, apiKey);
     const matched = users.find(
       (candidate) =>

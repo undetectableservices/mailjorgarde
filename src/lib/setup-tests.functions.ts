@@ -25,6 +25,8 @@ export const checkServerEnv = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     await assertAdmin(context);
+    const { getAdminRuntimeConfigurationState } = await import("./runtime-configuration.server");
+    const runtime = await getAdminRuntimeConfigurationState();
     const has = (k: string) => Boolean(process.env[k] && process.env[k]!.length > 0);
     return {
       ip: process.env.PUBLIC_IP ?? null,
@@ -36,13 +38,12 @@ export const checkServerEnv = createServerFn({ method: "POST" })
         SUPABASE_PUBLISHABLE_KEY: has("SUPABASE_PUBLISHABLE_KEY"),
         SUPABASE_SERVICE_ROLE_KEY: has("SUPABASE_SERVICE_ROLE_KEY"),
         INBOUND_WEBHOOK_SECRET: has("INBOUND_WEBHOOK_SECRET"),
-        JELLYFIN_URL: has("JELLYFIN_URL"),
-        JELLYFIN_API_KEY: has("JELLYFIN_API_KEY"),
-        OUTBOUND_SMTP_ENABLED:
-          (process.env.OUTBOUND_SMTP_ENABLED || "false").toLowerCase() === "true",
-        OUTBOUND_SMTP_HOST: has("OUTBOUND_SMTP_HOST"),
-        OUTBOUND_SMTP_USERNAME: has("OUTBOUND_SMTP_USERNAME"),
-        OUTBOUND_SMTP_PASSWORD: has("OUTBOUND_SMTP_PASSWORD_B64"),
+        JELLYFIN_URL: Boolean(runtime.jellyfin.url),
+        JELLYFIN_API_KEY: runtime.jellyfin.apiKeySet,
+        OUTBOUND_SMTP_ENABLED: runtime.smtp.enabled,
+        OUTBOUND_SMTP_HOST: Boolean(runtime.smtp.host),
+        OUTBOUND_SMTP_USERNAME: Boolean(runtime.smtp.username),
+        OUTBOUND_SMTP_PASSWORD: runtime.smtp.passwordSet,
       },
     };
   });
@@ -52,8 +53,12 @@ export const checkOutboundRelay = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     await assertAdmin(context);
-    const { verifyOutboundRelay } = await import("./outbound-mail.server");
-    return verifyOutboundRelay();
+    const { publicOutboundError, verifyOutboundRelay } = await import("./outbound-mail.server");
+    try {
+      return await verifyOutboundRelay();
+    } catch (error) {
+      throw new Error(publicOutboundError(error).message);
+    }
   });
 
 /**

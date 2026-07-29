@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { copyText } from "@/lib/copy-text";
+import { AdminServicesControl } from "@/components/admin-services-control";
 import {
   checkBackend,
   checkDns,
@@ -219,6 +220,7 @@ export function SetupWizard() {
 
   const steps = [
     "Bienvenue",
+    "Connexions",
     "Serveur",
     "Ports",
     "Domaines",
@@ -271,6 +273,27 @@ export function SetupWizard() {
       )}
 
       {step === 1 && (
+        <div className="space-y-5">
+          <div className="noir-panel rounded-3xl p-6 sm:p-8">
+            <h2 className="font-display text-3xl text-gold">Connexions essentielles</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Configurez et testez Jellyfin et le relais SMTP directement ici. Les secrets sont
+              chiffrés côté serveur et les changements sont appliqués sans redémarrage.
+            </p>
+          </div>
+          <AdminServicesControl />
+          <div className="flex gap-2">
+            <Button variant="ghost" onClick={() => setStep(0)}>
+              Retour
+            </Button>
+            <Button onClick={() => setStep(2)} className="bg-gold text-background">
+              Suivant : serveur
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {step === 2 && (
         <div className="noir-panel rounded-3xl p-8 space-y-5">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -376,17 +399,17 @@ export function SetupWizard() {
           </div>
 
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => setStep(0)}>
+            <Button variant="ghost" onClick={() => setStep(1)}>
               Retour
             </Button>
-            <Button onClick={() => setStep(2)} className="bg-gold text-background">
+            <Button onClick={() => setStep(3)} className="bg-gold text-background">
               Suivant : ports
             </Button>
           </div>
         </div>
       )}
 
-      {step === 2 && (
+      {step === 3 && (
         <div className="noir-panel rounded-3xl p-8 space-y-5">
           <h2 className="font-display text-2xl text-gold">Ports de messagerie</h2>
           <p className="text-sm text-muted-foreground">
@@ -520,17 +543,17 @@ export function SetupWizard() {
           </div>
 
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => setStep(1)}>
+            <Button variant="ghost" onClick={() => setStep(2)}>
               Retour
             </Button>
-            <Button onClick={() => setStep(3)} className="bg-gold text-background">
+            <Button onClick={() => setStep(4)} className="bg-gold text-background">
               Suivant : domaines
             </Button>
           </div>
         </div>
       )}
 
-      {step === 3 && (
+      {step === 4 && (
         <div className="noir-panel rounded-3xl p-8 space-y-4">
           <h2 className="font-display text-2xl text-gold">Ajouter vos domaines</h2>
           <p className="text-sm text-muted-foreground">
@@ -562,11 +585,11 @@ export function SetupWizard() {
             )}
           </div>
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => setStep(2)}>
+            <Button variant="ghost" onClick={() => setStep(3)}>
               Retour
             </Button>
             <Button
-              onClick={() => setStep(4)}
+              onClick={() => setStep(5)}
               disabled={!domains?.length}
               className="bg-gold text-background"
             >
@@ -576,7 +599,7 @@ export function SetupWizard() {
         </div>
       )}
 
-      {step === 4 && (
+      {step === 5 && (
         <div className="noir-panel rounded-3xl p-8 space-y-4">
           <h2 className="font-display text-2xl text-gold">Enregistrements DNS</h2>
           <p className="text-sm text-muted-foreground">
@@ -602,17 +625,17 @@ export function SetupWizard() {
             />
           )}
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => setStep(3)}>
+            <Button variant="ghost" onClick={() => setStep(4)}>
               Retour
             </Button>
-            <Button onClick={() => setStep(5)} className="bg-gold text-background">
+            <Button onClick={() => setStep(6)} className="bg-gold text-background">
               Suivant : vérifier
             </Button>
           </div>
         </div>
       )}
 
-      {step === 5 && (
+      {step === 6 && (
         <div className="noir-panel rounded-3xl p-8 space-y-4">
           <h2 className="font-display text-2xl text-gold">Vérifier la propagation DNS</h2>
           <p className="text-sm text-muted-foreground">
@@ -683,17 +706,17 @@ export function SetupWizard() {
             </div>
           ))}
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => setStep(4)}>
+            <Button variant="ghost" onClick={() => setStep(5)}>
               Retour
             </Button>
-            <Button onClick={() => setStep(6)} className="bg-gold text-background">
+            <Button onClick={() => setStep(7)} className="bg-gold text-background">
               Suivant : tester
             </Button>
           </div>
         </div>
       )}
 
-      {step === 6 && (
+      {step === 7 && (
         <div className="noir-panel rounded-[1.75rem] p-8 space-y-5">
           <h2 className="font-display text-2xl text-gold">Tester la réception</h2>
           <p className="text-sm text-muted-foreground">
@@ -729,17 +752,17 @@ export function SetupWizard() {
             </ol>
           </div>
           <div className="flex gap-2">
-            <Button variant="ghost" onClick={() => setStep(5)}>
+            <Button variant="ghost" onClick={() => setStep(6)}>
               Retour
             </Button>
-            <Button onClick={() => setStep(7)} className="bg-gold text-background">
+            <Button onClick={() => setStep(8)} className="bg-gold text-background">
               Terminer
             </Button>
           </div>
         </div>
       )}
 
-      {step === 7 && (
+      {step === 8 && (
         <div className="noir-panel rounded-[1.75rem] p-8 space-y-4 text-center">
           <div className="text-5xl">✨</div>
           <h2 className="font-display text-3xl text-gold">Tout est prêt</h2>

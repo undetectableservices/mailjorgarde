@@ -10,7 +10,11 @@ function fail(message) {
 function configuredJellyfin() {
   const rawUrl = (process.env.JELLYFIN_URL || "").trim();
   const apiKey = (process.env.JELLYFIN_API_KEY || "").trim();
-  if (!rawUrl || !/^[a-zA-Z0-9._~-]{16,256}$/.test(apiKey)) {
+  if (!rawUrl && !apiKey) return null;
+  if (!rawUrl || !apiKey) {
+    fail("la configuration Jellyfin historique est incomplète");
+  }
+  if (!/^[a-zA-Z0-9._~-]{16,256}$/.test(apiKey)) {
     fail("JELLYFIN_URL ou JELLYFIN_API_KEY est absent ou invalide");
   }
 
@@ -58,13 +62,24 @@ async function readBounded(response) {
   }
 }
 
-const { baseUrl, apiKey } = configuredJellyfin();
+const configuration = configuredJellyfin();
+if (!configuration) {
+  process.stdout.write(
+    "Validation Jellyfin ignorée : configurez l'adresse et la clé depuis le panneau administrateur\n",
+  );
+  process.exit(0);
+}
+const { baseUrl, apiKey } = configuration;
 let response;
 try {
   response = await fetch(`${baseUrl}/Users`, {
+    redirect: "error",
     headers: {
       accept: "application/json",
       authorization:
+        `MediaBrowser Client="JorgardeMail", Device="JorgardeMail Server", ` +
+        `DeviceId="jorgardemail-server", Version="1.0.0", Token="${apiKey}"`,
+      "x-emby-authorization":
         `MediaBrowser Client="JorgardeMail", Device="JorgardeMail Server", ` +
         `DeviceId="jorgardemail-server", Version="1.0.0", Token="${apiKey}"`,
       "x-emby-token": apiKey,
