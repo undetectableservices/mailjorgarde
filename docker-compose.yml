@@ -1,0 +1,280 @@
+name: ${COMPOSE_PROJECT_NAME:-mailjorgarde}
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required; run sudo ./run.sh}
+      AUTHENTICATOR_PASSWORD: ${AUTHENTICATOR_PASSWORD:?AUTHENTICATOR_PASSWORD is required}
+      AUTH_ADMIN_PASSWORD: ${AUTH_ADMIN_PASSWORD:?AUTH_ADMIN_PASSWORD is required}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./selfhost/db:/selfhost/db:ro
+      - ./selfhost/db/init:/docker-entrypoint-initdb.d:ro
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    stop_grace_period: 60s
+    logging: *default-logging
+
+  auth:
+    image: supabase/gotrue:v2.158.1
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      GOTRUE_API_HOST: 0.0.0.0
+      PORT: 9999
+      API_EXTERNAL_URL: ${SUPABASE_PUBLIC_URL:?SUPABASE_PUBLIC_URL is required}
+      GOTRUE_DB_DRIVER: postgres
+      DATABASE_URL: postgres://supabase_auth_admin:${AUTH_ADMIN_PASSWORD}@db:5432/postgres?search_path=auth&sslmode=disable
+      GOTRUE_SITE_URL: ${SITE_URL:?SITE_URL is required}
+      GOTRUE_URI_ALLOW_LIST: ${SITE_URL}
+      GOTRUE_JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      GOTRUE_JWT_EXP: 3600
+      GOTRUE_JWT_DEFAULT_GROUP_NAME: authenticated
+      GOTRUE_JWT_ADMIN_ROLES: service_role
+      GOTRUE_DISABLE_SIGNUP: "true"
+      GOTRUE_EXTERNAL_EMAIL_ENABLED: "true"
+      GOTRUE_EXTERNAL_PHONE_ENABLED: "false"
+      GOTRUE_MAILER_AUTOCONFIRM: "true"
+      GOTRUE_PASSWORD_MIN_LENGTH: 12
+      GOTRUE_LOG_LEVEL: info
+    expose: ["9999"]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:9999/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+    logging: *default-logging
+
+  schema-init:
+    image: postgres:15-alpine
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - ./selfhost/db:/selfhost/db:ro
+    entrypoint: ["/bin/sh", "/selfhost/db/apply-schema.sh"]
+    networks: [backend]
+    logging: *default-logging
+
+  rest:
+    image: postgrest/postgrest:v12.2.3
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      schema-init:
+        condition: service_completed_successfully
+    environment:
+      PGRST_DB_URI: postgres://authenticator:${AUTHENTICATOR_PASSWORD}@db:5432/postgres
+      PGRST_DB_SCHEMAS: public
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      PGRST_DB_USE_LEGACY_GUCS: "false"
+      PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
+    expose: ["3000"]
+    networks: [backend]
+    logging: *default-logging
+
+  gateway:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      auth:
+        condition: service_healthy
+      rest:
+        condition: service_started
+      schema-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./selfhost/gateway/Caddyfile:/etc/caddy/Caddyfile:ro
+    expose: ["8000"]
+    networks: [backend, app]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget -qO- http://127.0.0.1:8000/auth/v1/health >/dev/null && wget -qO- http://127.0.0.1:8000/rest/v1/ >/dev/null",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 15s
+    logging: *default-logging
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_SUPABASE_URL: ${SUPABASE_PUBLIC_URL:?SUPABASE_PUBLIC_URL is required}
+        VITE_SUPABASE_PUBLISHABLE_KEY: ${ANON_KEY:?ANON_KEY is required}
+    image: jorgardemail/web:latest
+    restart: unless-stopped
+    init: true
+    depends_on:
+      gateway:
+        condition: service_healthy
+      schema-init:
+        condition: service_completed_successfully
+    environment:
+      PORT: 6969
+      HOST: 0.0.0.0
+      NODE_ENV: production
+      SUPABASE_URL: http://gateway:8000
+      SUPABASE_PUBLISHABLE_KEY: ${ANON_KEY:?ANON_KEY is required}
+      SUPABASE_SERVICE_ROLE_KEY: ${SERVICE_ROLE_KEY:?SERVICE_ROLE_KEY is required}
+      INBOUND_WEBHOOK_SECRET: ${INBOUND_WEBHOOK_SECRET:?INBOUND_WEBHOOK_SECRET is required}
+      WEB_HOSTNAME: ${WEB_HOSTNAME:?WEB_HOSTNAME is required}
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME:?MAIL_HOSTNAME is required}
+      INSTALL_MODE: ${INSTALL_MODE:?INSTALL_MODE is required}
+      DEPLOYMENT_MODE: ${INSTALL_MODE}
+      LAN_BIND_ADDRESS: ${LAN_BIND_ADDRESS:?LAN_BIND_ADDRESS is required}
+      PUBLIC_IP: ${PUBLIC_IP:-}
+      INBOUND_MAX_MESSAGE_BYTES: ${INBOUND_MAX_MESSAGE_BYTES:-10485760}
+      INBOUND_MAX_BODY_BYTES: ${INBOUND_MAX_BODY_BYTES:-524288}
+      INBOUND_MAX_RECIPIENTS: ${INBOUND_MAX_RECIPIENTS:-5}
+      INBOUND_MAX_ATTACHMENTS: ${INBOUND_MAX_ATTACHMENTS:-32}
+      INBOUND_MAX_ATTACHMENT_BYTES: ${INBOUND_MAX_ATTACHMENT_BYTES:-8388608}
+    expose: ["6969"]
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:6969/api/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 30s
+    logging: *default-logging
+
+  smtp:
+    build:
+      context: ./services/smtp
+    image: jorgardemail/smtp:latest
+    restart: unless-stopped
+    init: true
+    environment:
+      WEBHOOK_URL: http://web:6969/api/public/inbound
+      INBOUND_WEBHOOK_SECRET: ${INBOUND_WEBHOOK_SECRET:?INBOUND_WEBHOOK_SECRET is required}
+      SMTP_HOSTNAME: ${MAIL_HOSTNAME:?MAIL_HOSTNAME is required}
+      SMTP_PORT: 2525
+      HEALTH_PORT: 8080
+      TLS_CERT: ${SMTP_TLS_CERT:-/smtp-certs/smtp.crt}
+      TLS_KEY: ${SMTP_TLS_KEY:-/smtp-certs/smtp.key}
+      SMTP_REQUIRE_TLS_CERT: "true"
+      MAX_MESSAGE_BYTES: ${SMTP_MAX_BYTES:-10485760}
+      MAX_BODY_BYTES: ${SMTP_MAX_BODY_BYTES:-524288}
+      MAX_RECIPIENTS: ${SMTP_MAX_RECIPIENTS:-5}
+      MAX_ATTACHMENTS: ${SMTP_MAX_ATTACHMENTS:-32}
+      MAX_ATTACHMENT_BYTES: ${SMTP_MAX_ATTACHMENT_BYTES:-8388608}
+      MAX_DELIVERY_CONCURRENCY: ${SMTP_MAX_DELIVERY_CONCURRENCY:-2}
+    ports:
+      - "${SMTP_BIND_ADDRESS:?SMTP_BIND_ADDRESS is required}:25:2525"
+    expose: ["8080"]
+    volumes:
+      - ${SMTP_TLS_DIR:?SMTP_TLS_DIR is required}:/smtp-certs:ro
+    depends_on:
+      web:
+        condition: service_healthy
+    networks: [app]
+    stop_grace_period: 30s
+    logging: *default-logging
+
+  cleanup:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      schema-init:
+        condition: service_completed_successfully
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        trap 'exit 0' TERM INT
+        while :; do
+          if ! psql -v ON_ERROR_STOP=1 -qAt -h db -U postgres -d postgres \
+            -c 'SELECT public.purge_expired_mailboxes();' >/dev/null; then
+            echo '[cleanup] purge failed; retrying in 60 seconds' >&2
+          fi
+          sleep 60
+        done
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h db -U postgres -d postgres"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    stop_grace_period: 70s
+    logging: *default-logging
+
+  caddy:
+    image: caddy:2-alpine
+    profiles: ["public-web"]
+    restart: unless-stopped
+    ports:
+      - "${PUBLIC_BIND_ADDRESS:-0.0.0.0}:80:80"
+      - "${PUBLIC_BIND_ADDRESS:-0.0.0.0}:443:443"
+    environment:
+      WEB_HOSTNAME: ${WEB_HOSTNAME:?WEB_HOSTNAME is required}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@invalid}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging: *default-logging
+
+networks:
+  backend:
+    internal: true
+  app:
+
+volumes:
+  db_data:
+    name: ${DB_VOLUME_NAME:-mailjorgarde_db_data}
+  caddy_data:
+    name: ${CADDY_DATA_VOLUME_NAME:-mailjorgarde_caddy_data}
+  caddy_config:
+    name: ${CADDY_CONFIG_VOLUME_NAME:-mailjorgarde_caddy_config}
+  caddy_lan_data:
+    name: ${CADDY_LAN_DATA_VOLUME_NAME:-mailjorgarde_caddy_lan_data}
+  caddy_lan_config:
+    name: ${CADDY_LAN_CONFIG_VOLUME_NAME:-mailjorgarde_caddy_lan_config}

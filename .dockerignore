@@ -1,0 +1,42 @@
+# Never send credentials or machine state to the image builder.
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+.lovable
+
+# Dependency caches and generated output
+node_modules
+.npm-cache
+/package-lock.json
+.output
+.vinxi
+.tanstack
+.nitro
+dist
+dist-ssr
+
+# Runtime data, backups, logs, and editor files
+backups
+state
+*.dump
+*.sql.gz
+logs
+*.log
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# These are not needed by the web-image build context.
+INSTALL.md
+README.md
+AGENTS.md
+docker-compose*.yml
+Caddyfile*
+install.sh
+run.sh
+selfhost
+services
+supabase

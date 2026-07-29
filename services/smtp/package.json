@@ -1,0 +1,15 @@
+{
+  "name": "jorgardemail-smtp",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test lib.test.js edge.integration.test.js"
+  },
+  "dependencies": {
+    "smtp-server": "^3.13.4",
+    "mailparser": "^3.7.1"
+  }
+}

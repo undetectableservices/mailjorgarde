@@ -1,0 +1,32 @@
+# Optional public-web mode only. Hybrid mode does not start this service.
+{
+	email {$ACME_EMAIL}
+}
+
+{$WEB_HOSTNAME} {
+	encode zstd gzip
+
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+		Strict-Transport-Security "max-age=31536000"
+	}
+
+	handle /api/public/inbound* {
+		respond "Not found" 404
+	}
+
+	handle /auth/v1/* {
+		reverse_proxy gateway:8000
+	}
+
+	handle /rest/v1/* {
+		reverse_proxy gateway:8000
+	}
+
+	handle {
+		reverse_proxy web:6969
+	}
+}

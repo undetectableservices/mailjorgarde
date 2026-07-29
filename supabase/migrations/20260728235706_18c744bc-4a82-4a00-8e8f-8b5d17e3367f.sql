@@ -1,0 +1,7 @@
+-- Historical no-op.
+--
+-- This migration previously duplicated the complete schema created by the
+-- 20260728194912 through 20260728195041 migrations. A clean `supabase db
+-- reset` therefore stopped immediately on `CREATE TYPE public.app_role` with
+-- "already exists". Keep the timestamp/file as a no-op so existing migration
+-- history remains ordered while fresh databases can reach later migrations.

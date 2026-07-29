@@ -1,0 +1,29 @@
+# LAN HTTPS overlay. Caddy issues a private local-CA certificate and is the
+# only published web/API endpoint.
+services:
+  caddy-lan:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "${LAN_BIND_ADDRESS:?LAN_BIND_ADDRESS is required}:${HTTPS_LOCAL_PORT:-8443}:8443"
+    environment:
+      WEB_HOSTNAME: ${WEB_HOSTNAME:?WEB_HOSTNAME is required}
+    volumes:
+      - ./Caddyfile.lan-https:/etc/caddy/Caddyfile:ro
+      - caddy_lan_data:/data
+      - caddy_lan_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

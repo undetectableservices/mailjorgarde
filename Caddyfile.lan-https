@@ -1,0 +1,29 @@
+# Single-origin LAN HTTPS gateway. `tls internal` uses Caddy's private CA;
+# clients must trust that CA or explicitly accept the browser warning.
+https://{$WEB_HOSTNAME}:8443 {
+	tls internal
+	encode zstd gzip
+
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+	}
+
+	handle /api/public/inbound* {
+		respond "Not found" 404
+	}
+
+	handle /auth/v1/* {
+		reverse_proxy gateway:8000
+	}
+
+	handle /rest/v1/* {
+		reverse_proxy gateway:8000
+	}
+
+	handle {
+		reverse_proxy web:6969
+	}
+}

@@ -1,0 +1,27 @@
+# LAN HTTP overlay used by hybrid and local modes. Only this Caddy endpoint
+# is published; web and gateway remain private on Docker networks.
+services:
+  caddy-lan:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "${LAN_BIND_ADDRESS:?LAN_BIND_ADDRESS is required}:${WEB_PORT:-6969}:6969"
+    volumes:
+      - ./Caddyfile.lan:/etc/caddy/Caddyfile:ro
+      - caddy_lan_data:/data
+      - caddy_lan_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    networks: [app]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:2019/config/"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"

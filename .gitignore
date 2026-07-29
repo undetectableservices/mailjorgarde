@@ -1,0 +1,50 @@
+# Runtime secrets and machine-local configuration
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output
+node_modules/
+.npm-cache/
+/package-lock.json
+.output/
+.vinxi/
+.tanstack/
+.nitro/
+dist/
+dist-ssr/
+
+# Runtime state and backups
+backups/
+state/
+*.dump
+*.sql.gz
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Wrangler / Cloudflare
+.wrangler/
+.dev.vars
+
+# Editor and OS files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Generic tool-local files. Deployment Caddy files use the tracked .lan
+# suffix deliberately, so they are not swallowed by this pattern.
+*.local

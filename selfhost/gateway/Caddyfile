@@ -1,0 +1,31 @@
+# JorgardeMail — internal API gateway.
+#
+# Presents GoTrue (auth) and PostgREST (database REST API) on the single
+# origin that supabase-js expects:
+#
+#   /auth/v1/*  →  auth:9999
+#   /rest/v1/*  →  rest:3000
+#
+# In public mode the outer Caddy exposes the same paths on your domain,
+# so the browser and the API share one origin (no CORS at all).
+
+{
+	auto_https off
+	admin off
+}
+
+:8000 {
+	encode zstd gzip
+
+	handle_path /auth/v1/* {
+		reverse_proxy auth:9999
+	}
+
+	handle_path /rest/v1/* {
+		reverse_proxy rest:3000
+	}
+
+	handle {
+		respond "JorgardeMail API gateway" 200
+	}
+}
