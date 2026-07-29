@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Download, Paperclip } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ArrowLeft, ArrowUpRight, Download, MailOpen, Paperclip } from "lucide-react";
 import { createIsolatedEmailDocument } from "@/lib/email-html";
 import { toast } from "sonner";
 
@@ -98,17 +99,25 @@ function MessageDetail() {
   const addr = `${m.mailboxes?.local_part}@${m.mailboxes?.domains?.name}`;
 
   return (
-    <div className="p-8 max-w-4xl mx-auto">
+    <div className="app-page app-page-narrow">
       <button
+        type="button"
         onClick={() => navigate({ to: "/all" })}
-        className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-4"
+        className="mb-5 inline-flex min-h-10 items-center gap-2 rounded-xl border border-transparent px-2 text-sm text-muted-foreground hover:border-border hover:bg-card/45 hover:text-foreground"
       >
         <ArrowLeft size={14} /> Back
       </button>
 
-      <div className="noir-panel rounded-2xl p-8 mb-4 glow-gold">
-        <div className="text-xs text-gold/80 uppercase tracking-widest mb-2">to {addr}</div>
-        <h1 className="font-display text-3xl">{m.subject || "(no subject)"}</h1>
+      <div className="noir-panel mb-4 rounded-3xl p-6 sm:p-8">
+        <div className="mb-5 flex items-center justify-between gap-4">
+          <div className="page-eyebrow mb-0">Inbound message</div>
+          <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-brand-secondary ring-1 ring-primary/15">
+            <MailOpen className="size-5" />
+          </div>
+        </div>
+        <h1 className="font-display text-3xl leading-tight sm:text-4xl">
+          {m.subject || "(no subject)"}
+        </h1>
         <div className="mt-3 flex flex-wrap gap-3 text-sm text-muted-foreground">
           <span>
             From <span className="text-foreground">{m.sender}</span>
@@ -116,10 +125,13 @@ function MessageDetail() {
           <span>·</span>
           <span>{new Date(m.received_at).toLocaleString()}</span>
         </div>
+        <div className="mt-5 inline-flex max-w-full rounded-full border border-brand-secondary/20 bg-brand-secondary/5 px-3 py-1 text-xs text-brand-secondary">
+          <span className="truncate">to {addr}</span>
+        </div>
       </div>
 
       {m.attachments && m.attachments.length > 0 && (
-        <div className="noir-panel rounded-xl p-4 mb-4">
+        <div className="noir-panel mb-4 rounded-2xl p-4">
           <div className="flex items-center gap-2 text-sm font-medium mb-3">
             <Paperclip size={15} />
             {m.attachments.length} attachment{m.attachments.length === 1 ? "" : "s"}
@@ -143,26 +155,27 @@ function MessageDetail() {
         </div>
       )}
 
-      <div className="flex gap-2 mb-3">
-        {(["text", "html", "raw"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`text-xs uppercase tracking-wider px-3 py-1 rounded-md border ${tab === t ? "border-gold text-gold" : "border-border text-muted-foreground hover:text-foreground"}`}
-          >
-            {t}
-          </button>
-        ))}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
+          <TabsList>
+            {(["text", "html", "raw"] as const).map((item) => (
+              <TabsTrigger key={item} value={item} className="uppercase tracking-wider">
+                {item}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
         <button
+          type="button"
           onClick={() => setShowHeaders((v) => !v)}
-          className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+          className="ml-auto min-h-10 rounded-xl px-3 text-xs text-muted-foreground hover:bg-card/50 hover:text-foreground"
         >
           {showHeaders ? "Hide" : "Show"} full headers
         </button>
       </div>
 
       {showHeaders && (
-        <pre className="noir-panel rounded-xl p-4 text-xs overflow-auto max-h-64 mb-3">
+        <pre className="noir-panel mb-3 max-h-64 overflow-auto rounded-2xl p-4 text-xs">
           {JSON.stringify(
             {
               "Message-ID": m.message_id,
@@ -178,7 +191,7 @@ function MessageDetail() {
         </pre>
       )}
 
-      <div className="noir-panel rounded-xl p-6 min-h-[200px]">
+      <div className="noir-panel min-h-[240px] rounded-2xl p-5 sm:p-6">
         {tab === "text" && (
           <pre className="whitespace-pre-wrap text-sm font-sans">
             {m.body_text || "(no plain text body)"}
@@ -201,7 +214,7 @@ function MessageDetail() {
         )}
       </div>
 
-      <div className="mt-4 flex gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
         <Button
           variant="outline"
           onClick={async () => {
@@ -259,9 +272,9 @@ function MessageDetail() {
         <Link
           to="/m/$id"
           params={{ id: m.mailbox_id }}
-          className="ml-auto text-sm text-gold self-center"
+          className="ml-auto inline-flex min-h-11 items-center gap-2 self-center rounded-xl px-3 text-sm font-semibold text-gold hover:bg-brand-secondary/5"
         >
-          Open mailbox →
+          Open mailbox <ArrowUpRight className="size-4" />
         </Link>
       </div>
     </div>

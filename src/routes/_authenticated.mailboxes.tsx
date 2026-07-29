@@ -14,8 +14,9 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
+import { PageHeader } from "@/components/page-header";
 import { toast } from "sonner";
-import { Trash2 } from "lucide-react";
+import { AtSign, Plus, Trash2 } from "lucide-react";
 
 function errorMessage(error: unknown, fallback: string): string {
   if (
@@ -171,15 +172,19 @@ function Mailboxes() {
   });
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <div className="mb-6">
-        <h1 className="font-display text-4xl text-gold">Mailboxes</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Permanent or temporary. Up to {limit} addresses per account.
-        </p>
-      </div>
+    <div className="app-page">
+      <PageHeader
+        eyebrow="Address control"
+        title="Mailboxes"
+        description={`Create permanent or temporary addresses. Your account can own up to ${limit}.`}
+        actions={
+          <div className="premium-badge normal-case tracking-normal">
+            <AtSign className="size-3.5" /> {Math.max(0, limit - used)} available
+          </div>
+        }
+      />
 
-      <div className="noir-panel rounded-xl p-5 mb-6">
+      <div className="noir-panel mb-6 rounded-2xl p-5">
         <div className="flex items-center justify-between mb-2 text-sm">
           <span>
             {used} / {limit} used
@@ -192,8 +197,16 @@ function Mailboxes() {
         />
       </div>
 
-      <div className="noir-panel rounded-xl p-6 mb-8 space-y-4">
-        <h2 className="font-display text-xl">Create new address</h2>
+      <div className="noir-panel mb-8 space-y-4 rounded-2xl p-5 sm:p-6">
+        <div className="flex items-center gap-3">
+          <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-brand-secondary ring-1 ring-primary/15">
+            <Plus className="size-5" />
+          </div>
+          <div>
+            <h2 className="font-display text-xl">Create new address</h2>
+            <p className="text-xs text-muted-foreground">Choose a domain and lifetime.</p>
+          </div>
+        </div>
         {!domains || domains.length === 0 ? (
           <div className="text-sm text-muted-foreground">
             No domains configured yet. An admin needs to add one first.
@@ -247,7 +260,7 @@ function Mailboxes() {
               <Button
                 onClick={() => create.mutate()}
                 disabled={create.isPending}
-                className="bg-gold text-background hover:opacity-90 ml-auto"
+                className="bg-gold ml-auto text-white"
               >
                 Create
               </Button>
@@ -259,9 +272,9 @@ function Mailboxes() {
         )}
       </div>
 
-      <div className="noir-panel rounded-xl divide-y divide-border overflow-hidden">
+      <div className="noir-panel mail-list divide-y divide-border">
         {(mailboxes ?? []).map((mb) => (
-          <div key={mb.id} className="p-4 flex items-center gap-4">
+          <div key={mb.id} className="mail-row flex items-center gap-4 p-4">
             <div className="flex-1 min-w-0">
               <div className="font-mono truncate flex items-center gap-2">
                 <span>
@@ -326,7 +339,12 @@ function Mailboxes() {
           </div>
         ))}
         {(!mailboxes || mailboxes.length === 0) && (
-          <div className="p-12 text-center text-muted-foreground">No mailboxes yet.</div>
+          <div className="empty-state">
+            <div>
+              <AtSign className="mx-auto mb-4 size-8 text-brand-secondary/70" />
+              No mailboxes yet.
+            </div>
+          </div>
         )}
       </div>
     </div>

@@ -1,29 +1,24 @@
-import {
-  createFileRoute,
-  Link,
-  Outlet,
-  redirect,
-  useNavigate,
-  useRouterState,
-} from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { AuthProvider, useAuth } from "@/lib/auth";
-import { useEffect, useState } from "react";
-import type { ReactNode } from "react";
-import { toast } from "sonner";
+import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Inbox,
+  LogOut,
   Mail,
   Menu,
   MessageSquare,
+  Plus,
+  Radio,
   Settings,
   Shield,
-  LogOut,
-  Plus,
-  X,
   UserRound,
+  X,
 } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { toast } from "sonner";
+
+import { BrandLockup, BrandMark } from "@/components/brand-mark";
+import { supabase } from "@/integrations/supabase/client";
+import { AuthProvider, useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/_authenticated")({
   component: AuthedShell,
@@ -40,7 +35,7 @@ function AuthedShell() {
 function Guard() {
   const { session, loading } = useAuth();
   const navigate = useNavigate();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   useEffect(() => {
     if (!loading && !session) navigate({ to: "/auth", search: { next: pathname } });
@@ -48,8 +43,17 @@ function Guard() {
 
   if (loading || !session) {
     return (
-      <div className="dark min-h-screen bg-background flex items-center justify-center text-muted-foreground text-sm">
-        Loading…
+      <div className="auth-shell dark flex min-h-screen items-center justify-center">
+        <div className="jm-fade-up flex flex-col items-center gap-4 text-sm text-muted-foreground">
+          <div className="relative">
+            <div className="absolute inset-0 rounded-2xl bg-primary/30 blur-xl" />
+            <BrandMark className="relative size-14" />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="signal-dot size-1.5 rounded-full" />
+            Establishing private session
+          </div>
+        </div>
       </div>
     );
   }
@@ -118,33 +122,41 @@ function Shell() {
   };
 
   return (
-    <div className="dark min-h-screen bg-background text-foreground md:grid md:grid-cols-[260px_1fr]">
+    <div className="app-shell dark min-h-screen text-foreground md:grid md:grid-cols-[284px_minmax(0,1fr)]">
       {mobileOpen && (
         <button
           type="button"
           aria-label="Close navigation"
-          className="fixed inset-0 z-40 bg-black/60 md:hidden"
+          className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm md:hidden"
           onClick={() => setMobileOpen(false)}
         />
       )}
+
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-[260px] border-r border-sidebar-border bg-sidebar flex flex-col transition-transform md:static md:z-auto md:w-auto md:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+        className={`app-sidebar fixed inset-y-0 left-0 z-50 flex w-[284px] flex-col border-r border-sidebar-border p-3 transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] md:sticky md:top-0 md:z-auto md:h-screen md:w-auto md:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
-        <div className="p-5 border-b border-sidebar-border">
+        <div className="px-2 pb-4 pt-2">
           <div className="flex items-center justify-between gap-3">
-            <div className="font-display text-2xl text-gold">JorgardeMail</div>
+            <Link to="/all" onClick={() => setMobileOpen(false)} aria-label="JorgardeMail inbox">
+              <BrandLockup />
+            </Link>
             <button
               type="button"
               aria-label="Close navigation"
-              className="text-muted-foreground md:hidden"
+              className="grid size-10 place-items-center rounded-xl text-muted-foreground hover:bg-sidebar-accent hover:text-foreground md:hidden"
               onClick={() => setMobileOpen(false)}
             >
               <X size={18} />
             </button>
           </div>
-          <div className="text-xs text-muted-foreground truncate">@{profile?.username ?? "…"}</div>
         </div>
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1 text-sm">
+
+        <div className="mx-1 mb-4 h-px bg-gradient-to-r from-transparent via-sidebar-border to-transparent" />
+
+        <nav className="flex-1 space-y-1 overflow-y-auto px-1 text-sm">
+          <div className="mb-2 px-3 text-[0.68rem] font-bold uppercase tracking-[0.16em] text-muted-foreground/70">
+            Workspace
+          </div>
           <NavItem to="/all" icon={<Inbox size={16} />} onNavigate={() => setMobileOpen(false)}>
             All mail
           </NavItem>
@@ -157,36 +169,42 @@ function Shell() {
             Direct messages
           </NavItem>
 
-          <div className="mt-4 mb-1 px-3 text-[10px] uppercase tracking-widest text-muted-foreground flex items-center justify-between">
+          <div className="mb-1 mt-6 flex items-center justify-between px-3 text-[0.68rem] font-bold uppercase tracking-[0.16em] text-muted-foreground/70">
             <span>Mailboxes</span>
-            <Link to="/mailboxes" className="text-gold hover:opacity-80">
-              <Plus size={12} />
+            <Link
+              to="/mailboxes"
+              aria-label="Create mailbox"
+              className="grid size-7 place-items-center rounded-lg text-gold hover:bg-sidebar-accent hover:text-foreground"
+            >
+              <Plus size={14} />
             </Link>
           </div>
-          {(mailboxes ?? []).slice(0, 20).map((mb) => (
+          {(mailboxes ?? []).slice(0, 20).map((mailbox) => (
             <NavItem
-              key={mb.id}
+              key={mailbox.id}
               to="/m/$id"
-              params={{ id: mb.id }}
+              params={{ id: mailbox.id }}
               icon={<Mail size={14} />}
               onNavigate={() => setMobileOpen(false)}
             >
               <span className="truncate">
-                {mb.local_part}@{mb.domain?.name}
+                {mailbox.local_part}@{mailbox.domain?.name}
               </span>
-              {mb.is_temp && <span className="ml-auto text-[10px] text-gold/70">temp</span>}
+              {mailbox.is_temp && (
+                <span className="ml-auto rounded-full border border-primary/20 bg-primary/10 px-1.5 py-0.5 text-[0.62rem] font-bold uppercase tracking-wide text-gold">
+                  temp
+                </span>
+              )}
             </NavItem>
           ))}
           {mailboxes && mailboxes.length === 0 && (
-            <Link
-              to="/mailboxes"
-              className="block px-3 py-2 rounded-md text-muted-foreground hover:bg-sidebar-accent"
-            >
+            <Link to="/mailboxes" className="nav-item text-muted-foreground">
               + Create your first address
             </Link>
           )}
         </nav>
-        <div className="p-3 border-t border-sidebar-border space-y-1 text-sm">
+
+        <div className="mt-3 space-y-1 border-t border-sidebar-border px-1 pt-3 text-sm">
           <NavItem
             to="/mailboxes"
             icon={<Settings size={16} />}
@@ -210,22 +228,41 @@ function Shell() {
               Admin
             </NavItem>
           )}
-          <button
-            onClick={signOut}
-            className="w-full text-left flex items-center gap-2 px-3 py-2 rounded-md text-muted-foreground hover:bg-sidebar-accent"
-          >
+          <button onClick={signOut} className="nav-item w-full text-left text-muted-foreground">
             <LogOut size={16} /> Sign out
           </button>
+
+          <div className="profile-chip mt-3 flex items-center gap-3 rounded-2xl p-3">
+            <div className="relative grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand/80 to-brand-secondary/70 font-display font-bold text-white shadow-lg">
+              {(profile?.username ?? "?")[0]?.toUpperCase()}
+              <span className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-sidebar bg-emerald-400" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold text-foreground">
+                {profile?.display_name || profile?.username || "Private user"}
+              </div>
+              <div className="truncate text-xs text-muted-foreground">
+                @{profile?.username ?? "connecting"}
+              </div>
+            </div>
+            <Radio className="size-4 shrink-0 text-brand-secondary" aria-label="Node online" />
+          </div>
         </div>
       </aside>
-      <main className="min-h-screen overflow-x-hidden">
-        <div className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-background/95 px-4 backdrop-blur md:hidden">
-          <button type="button" aria-label="Open navigation" onClick={() => setMobileOpen(true)}>
+
+      <main className="app-main min-h-screen overflow-x-hidden">
+        <div className="sticky top-0 z-30 flex h-16 items-center gap-3 border-b border-border bg-background/75 px-4 backdrop-blur-xl md:hidden">
+          <button
+            type="button"
+            aria-label="Open navigation"
+            className="grid size-10 place-items-center rounded-xl border border-border bg-card/50 text-muted-foreground"
+            onClick={() => setMobileOpen(true)}
+          >
             <Menu size={20} />
           </button>
-          <div className="font-display text-xl text-gold">JorgardeMail</div>
+          <BrandLockup compact />
         </div>
-        <div className="jm-fade-up">
+        <div className="route-stage">
           <Outlet />
         </div>
       </main>
@@ -251,20 +288,16 @@ function NavItem(props: NavItemProps) {
   const content = (
     <>
       {icon}
-      <span className="flex-1 truncate flex items-center gap-2">{children}</span>
+      <span className="flex flex-1 items-center gap-2 truncate">{children}</span>
       {badge ? (
-        <span className="ml-auto text-[10px] bg-gold text-background rounded-full px-1.5 py-0.5 font-semibold">
+        <span className="ml-auto grid min-w-5 place-items-center rounded-full bg-gradient-to-br from-brand to-brand-secondary px-1.5 py-0.5 text-[0.65rem] font-bold text-white shadow-[0_0_16px_var(--brand-secondary)]">
           {badge}
         </span>
       ) : null}
     </>
   );
-  const activeProps = {
-    className:
-      "flex items-center gap-2 px-3 py-2 rounded-md bg-sidebar-accent text-sidebar-accent-foreground border-l-2 border-gold",
-  };
-  const className =
-    "flex items-center gap-2 px-3 py-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent transition-colors";
+  const activeProps = { className: "nav-item nav-item-active" };
+  const className = "nav-item";
 
   if (props.to === "/m/$id") {
     return (

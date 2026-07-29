@@ -5,9 +5,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/page-header";
+import { ListSkeleton } from "@/components/list-skeleton";
 import { toast } from "sonner";
 import { formatDistanceToNowStrict } from "date-fns";
 import type { Database } from "@/integrations/supabase/types";
+import { ArrowUpRight, MessageCircleMore, Search } from "lucide-react";
 
 type DmSuggestion = Database["public"]["Functions"]["search_dm_profiles"]["Returns"][number];
 
@@ -39,7 +42,7 @@ function DMPage() {
   const [target, setTarget] = useState("");
   const [suggestions, setSuggestions] = useState<DmSuggestion[]>([]);
 
-  const { data: threads } = useQuery({
+  const { data: threads, isLoading: threadsLoading } = useQuery({
     queryKey: ["dm-threads", user?.id],
     enabled: !!user,
     queryFn: async () => {
@@ -101,35 +104,46 @@ function DMPage() {
   });
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <h1 className="font-display text-4xl text-gold mb-1">Direct messages</h1>
-      <p className="text-sm text-muted-foreground mb-6">
-        Visible only to conversation participants in the app; not end-to-end encrypted. No SMTP, no
-        email addresses — just @usernames.
-      </p>
+    <div className="app-page">
+      <PageHeader
+        eyebrow="Local channel"
+        title="Direct messages"
+        description="Visible only to conversation participants in the app; not end-to-end encrypted. No SMTP or email addresses — just local @usernames."
+        actions={
+          <div className="premium-badge normal-case tracking-normal">
+            <MessageCircleMore className="size-3.5" /> Private node
+          </div>
+        }
+      />
 
-      <div className="noir-panel rounded-xl p-5 mb-6 relative">
+      <div className="noir-panel relative mb-6 rounded-2xl p-4 sm:p-5">
+        <div className="mb-3 text-sm font-semibold text-foreground">Start a conversation</div>
         <div className="flex gap-2">
-          <Input
-            placeholder="@username"
-            value={target}
-            onChange={(e) => setTarget(e.target.value.replace(/^@/, ""))}
-          />
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              aria-label="Find local user"
+              placeholder="Find @username"
+              value={target}
+              onChange={(event) => setTarget(event.target.value.replace(/^@/, ""))}
+              className="pl-10"
+            />
+          </div>
           <Button
             onClick={() => start.mutate(target)}
             disabled={!target || start.isPending}
-            className="bg-gold text-background hover:opacity-90"
+            className="bg-gold text-white"
           >
-            Start
+            Start <ArrowUpRight />
           </Button>
         </div>
         {suggestions.length > 0 && (
-          <div className="mt-2 rounded-md border border-border bg-card divide-y divide-border">
+          <div className="mt-2 divide-y divide-border overflow-hidden rounded-xl border border-border bg-popover/95 shadow-2xl backdrop-blur-xl">
             {suggestions.map((s) => (
               <button
                 key={s.user_id}
                 onClick={() => start.mutate(s.username)}
-                className="w-full text-left px-3 py-2 hover:bg-accent text-sm"
+                className="w-full px-3.5 py-3 text-left text-sm hover:bg-accent"
               >
                 @{s.username} <span className="text-muted-foreground">— {s.display_name}</span>
               </button>
@@ -138,28 +152,35 @@ function DMPage() {
         )}
       </div>
 
-      <div className="noir-panel rounded-xl divide-y divide-border overflow-hidden">
-        {(threads ?? []).length === 0 && (
-          <div className="p-12 text-center text-muted-foreground">No conversations yet.</div>
+      <div className="noir-panel mail-list divide-y divide-border">
+        {threadsLoading && <ListSkeleton rows={4} />}
+        {!threadsLoading && (threads ?? []).length === 0 && (
+          <div className="empty-state">
+            <div>
+              <MessageCircleMore className="mx-auto mb-4 size-8 text-brand-secondary/70" />
+              No conversations yet.
+            </div>
+          </div>
         )}
-        {(threads ?? []).map((t) => (
-          <button
-            key={t.id}
-            onClick={() => navigate({ to: "/dm/$id", params: { id: t.id } })}
-            className="w-full text-left px-5 py-3 hover:bg-accent flex items-center gap-3"
-          >
-            <div className="h-9 w-9 rounded-full bg-gold/20 text-gold flex items-center justify-center font-display">
-              {(t.other?.username ?? "?")[0]?.toUpperCase()}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="font-medium truncate">@{t.other?.username}</div>
-              <div className="text-xs text-muted-foreground">{t.other?.display_name}</div>
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {formatDistanceToNowStrict(new Date(t.last_at), { addSuffix: true })}
-            </div>
-          </button>
-        ))}
+        {!threadsLoading &&
+          (threads ?? []).map((t) => (
+            <button
+              key={t.id}
+              onClick={() => navigate({ to: "/dm/$id", params: { id: t.id } })}
+              className="mail-row flex w-full items-center gap-3 px-5 py-3.5 text-left"
+            >
+              <div className="grid size-10 place-items-center rounded-xl bg-gradient-to-br from-brand/25 to-brand-secondary/15 font-display font-bold text-brand-secondary ring-1 ring-brand-secondary/15">
+                {(t.other?.username ?? "?")[0]?.toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">@{t.other?.username}</div>
+                <div className="text-xs text-muted-foreground">{t.other?.display_name}</div>
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {formatDistanceToNowStrict(new Date(t.last_at), { addSuffix: true })}
+              </div>
+            </button>
+          ))}
       </div>
     </div>
   );

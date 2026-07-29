@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
+import { PageHeader } from "@/components/page-header";
+import { KeyRound, UserRound } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({
@@ -89,18 +91,25 @@ function AccountSettings() {
   });
 
   return (
-    <div className="mx-auto max-w-3xl p-4 sm:p-8">
-      <h1 className="font-display text-4xl text-gold">Account settings</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Your account and direct messages stay on this server.
-      </p>
+    <div className="app-page app-page-narrow">
+      <PageHeader
+        eyebrow="Personal controls"
+        title="Account settings"
+        description="Tune your identity, privacy, and local credentials. Your account and direct messages stay on this server."
+      />
 
-      <section className="noir-panel mt-6 space-y-4 rounded-xl p-5 sm:p-6">
-        <div>
-          <h2 className="font-display text-2xl">Profile</h2>
-          <p className="text-xs text-muted-foreground">
-            Username: <span className="font-mono text-foreground">@{profile?.username ?? "…"}</span>
-          </p>
+      <section className="noir-panel space-y-4 rounded-2xl p-5 sm:p-6">
+        <div className="flex items-center gap-3">
+          <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-brand-secondary ring-1 ring-primary/15">
+            <UserRound className="size-5" />
+          </div>
+          <div>
+            <h2 className="font-display text-2xl">Profile</h2>
+            <p className="text-xs text-muted-foreground">
+              Username:{" "}
+              <span className="font-mono text-foreground">@{profile?.username ?? "…"}</span>
+            </p>
+          </div>
         </div>
         <div>
           <Label htmlFor="account-display-name">Display name</Label>
@@ -145,7 +154,7 @@ function AccountSettings() {
         </div>
         <Button
           type="button"
-          className="bg-gold text-background"
+          className="bg-gold text-white"
           disabled={!profile || saveProfile.isPending}
           onClick={() => saveProfile.mutate()}
         >
@@ -153,12 +162,17 @@ function AccountSettings() {
         </Button>
       </section>
 
-      <section className="noir-panel mt-4 space-y-4 rounded-xl p-5 sm:p-6">
-        <div>
-          <h2 className="font-display text-2xl">Change password</h2>
-          <p className="text-xs text-muted-foreground">
-            Use at least 12 characters. Your administrator cannot see this password.
-          </p>
+      <section className="noir-panel mt-4 space-y-4 rounded-2xl p-5 sm:p-6">
+        <div className="flex items-center gap-3">
+          <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-brand-secondary ring-1 ring-primary/15">
+            <KeyRound className="size-5" />
+          </div>
+          <div>
+            <h2 className="font-display text-2xl">Change password</h2>
+            <p className="text-xs text-muted-foreground">
+              Use at least 12 characters. Your administrator cannot see this password.
+            </p>
+          </div>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div>

@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/page-header";
+import { ListSkeleton } from "@/components/list-skeleton";
 import { formatDistanceToNowStrict } from "date-fns";
+import { Inbox, Search } from "lucide-react";
 
 const FOLDERS = ["inbox", "archive", "trash", "spam"] as const;
 type Folder = (typeof FOLDERS)[number];
@@ -28,7 +31,7 @@ function AllMail() {
     return () => clearTimeout(t);
   }, [q]);
 
-  const { data } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["all-mail", folder, debounced],
     queryFn: async () => {
       const search = debounced
@@ -56,17 +59,23 @@ function AllMail() {
   const rows = useMemo(() => data ?? [], [data]);
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <div className="flex items-baseline justify-between mb-6">
-        <div>
-          <h1 className="font-display text-4xl text-gold">All mail</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            {rows.length} message{rows.length === 1 ? "" : "s"} across every address you own.
-          </p>
-        </div>
-      </div>
+    <div className="app-page">
+      <PageHeader
+        eyebrow="Unified inbox"
+        title="All mail"
+        description={
+          isLoading
+            ? "Syncing messages across every address you own…"
+            : `${rows.length} message${rows.length === 1 ? "" : "s"} across every address you own.`
+        }
+        actions={
+          <div className="premium-badge normal-case tracking-normal">
+            <Inbox className="size-3.5" /> Live inbox
+          </div>
+        }
+      />
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row">
+      <div className="noir-panel mb-4 flex flex-col gap-3 rounded-2xl p-2.5 sm:flex-row">
         <div className="flex gap-2 overflow-x-auto">
           {FOLDERS.map((name) => (
             <Button
@@ -74,55 +83,64 @@ function AllMail() {
               type="button"
               size="sm"
               variant={folder === name ? "default" : "outline"}
-              className={folder === name ? "bg-gold capitalize text-background" : "capitalize"}
+              className={folder === name ? "bg-gold capitalize text-white" : "capitalize"}
               onClick={() => setFolder(name)}
             >
               {name}
             </Button>
           ))}
         </div>
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search subject, sender, body…"
-          className="bg-card border-border sm:ml-auto sm:max-w-sm"
-        />
+        <div className="relative sm:ml-auto sm:w-full sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            aria-label="Search mail"
+            value={q}
+            onChange={(event) => setQ(event.target.value)}
+            placeholder="Search subject, sender, body…"
+            className="border-border bg-black/15 pl-10"
+          />
+        </div>
       </div>
 
-      <div className="noir-panel rounded-xl divide-y divide-border overflow-hidden">
-        {rows.length === 0 && (
-          <div className="p-12 text-center text-muted-foreground">
-            {debounced ? "No messages match your search." : `No messages in ${folder}.`}
+      <div className="noir-panel mail-list divide-y divide-border">
+        {isLoading && <ListSkeleton />}
+        {!isLoading && rows.length === 0 && (
+          <div className="empty-state">
+            <div>
+              <Inbox className="mx-auto mb-4 size-8 text-brand-secondary/70" />
+              {debounced ? "No messages match your search." : `No messages in ${folder}.`}
+            </div>
           </div>
         )}
-        {rows.map((m, i) => {
-          const addr = `${m.mailboxes?.local_part}@${m.mailboxes?.domains?.name}`;
-          return (
-            <Link
-              key={m.id}
-              to="/msg/$id"
-              params={{ id: m.id }}
-              className="cv-auto flex items-center gap-4 px-5 py-3 hover:bg-accent transition-colors group"
-              style={{ animation: `jm-fade-up 260ms ease-out both ${Math.min(i, 20) * 12}ms` }}
-            >
-              <span
-                className={`h-2 w-2 rounded-full ${m.seen ? "bg-transparent" : "bg-gold jm-pulse-gold"}`}
-              />
-              <span
-                className={`flex-1 min-w-0 ${m.seen ? "text-muted-foreground" : "font-semibold"}`}
+        {!isLoading &&
+          rows.map((m, i) => {
+            const addr = `${m.mailboxes?.local_part}@${m.mailboxes?.domains?.name}`;
+            return (
+              <Link
+                key={m.id}
+                to="/msg/$id"
+                params={{ id: m.id }}
+                className="mail-row cv-auto group flex items-center gap-4 px-5 py-3.5"
+                style={{ animation: `jm-fade-up 420ms ease-out both ${Math.min(i, 8) * 26}ms` }}
               >
-                <span className="block truncate">{m.subject || "(no subject)"}</span>
-                <span className="block text-xs text-muted-foreground truncate">{m.sender}</span>
-              </span>
-              <span className="hidden md:inline text-[11px] rounded-full border border-gold/40 text-gold/90 px-2 py-0.5 truncate max-w-[220px]">
-                to {addr}
-              </span>
-              <span className="text-xs text-muted-foreground w-16 text-right shrink-0">
-                {formatDistanceToNowStrict(new Date(m.received_at), { addSuffix: false })}
-              </span>
-            </Link>
-          );
-        })}
+                <span
+                  className={`size-2 rounded-full ${m.seen ? "bg-transparent" : "signal-dot jm-pulse-gold"}`}
+                />
+                <span
+                  className={`flex-1 min-w-0 ${m.seen ? "text-muted-foreground" : "font-semibold"}`}
+                >
+                  <span className="block truncate">{m.subject || "(no subject)"}</span>
+                  <span className="block text-xs text-muted-foreground truncate">{m.sender}</span>
+                </span>
+                <span className="hidden max-w-[220px] truncate rounded-full border border-brand-secondary/20 bg-brand-secondary/5 px-2.5 py-1 text-xs text-brand-secondary md:inline">
+                  to {addr}
+                </span>
+                <span className="text-xs text-muted-foreground w-16 text-right shrink-0">
+                  {formatDistanceToNowStrict(new Date(m.received_at), { addSuffix: false })}
+                </span>
+              </Link>
+            );
+          })}
       </div>
     </div>
   );

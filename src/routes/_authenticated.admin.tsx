@@ -7,8 +7,10 @@ import { useAuth } from "@/lib/auth";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { PageHeader } from "@/components/page-header";
 import { toast } from "sonner";
-import { Trash2, Megaphone } from "lucide-react";
+import { Trash2, Megaphone, ShieldCheck } from "lucide-react";
 import {
   broadcastToAllUsers,
   getAdminUserStats,
@@ -64,19 +66,26 @@ function AdminPage() {
   if (!isAdmin) return <div className="p-8 text-muted-foreground">Checking permissions…</div>;
 
   return (
-    <div className="p-8 max-w-6xl mx-auto">
-      <h1 className="font-display text-4xl text-gold">Admin</h1>
-      <div className="mt-4 flex gap-2 border-b border-border overflow-x-auto">
-        {(["setup", "users", "domains", "broadcast"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm capitalize border-b-2 whitespace-nowrap ${tab === t ? "border-gold text-gold" : "border-transparent text-muted-foreground"}`}
-          >
-            {t === "setup" ? "Setup wizard" : t}
-          </button>
-        ))}
-      </div>
+    <div className="app-page">
+      <PageHeader
+        eyebrow="Node operations"
+        title="Admin control"
+        description="Configure delivery, identities, domains, and system-wide communication from one private console."
+        actions={
+          <div className="premium-badge normal-case tracking-normal">
+            <ShieldCheck className="size-3.5" /> Administrator
+          </div>
+        }
+      />
+      <Tabs value={tab} onValueChange={(value) => setTab(value as typeof tab)}>
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 p-1 sm:inline-grid sm:w-auto sm:grid-cols-4">
+          {(["setup", "users", "domains", "broadcast"] as const).map((item) => (
+            <TabsTrigger key={item} value={item} className="capitalize">
+              {item === "setup" ? "Setup wizard" : item}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
       <div className="mt-6">
         {tab === "setup" && <SetupWizard />}
         {tab === "users" && <Users />}
@@ -102,13 +111,13 @@ function Broadcast() {
   });
 
   return (
-    <div className="noir-panel rounded-xl p-6 space-y-4 max-w-2xl">
+    <div className="noir-panel max-w-2xl space-y-4 rounded-2xl p-6">
       <div className="flex items-center gap-3">
-        <div className="w-10 h-10 rounded-full bg-gold/10 grid place-items-center text-gold">
+        <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-gold ring-1 ring-primary/15">
           <Megaphone size={18} />
         </div>
         <div>
-          <h2 className="font-display text-2xl text-gold">Broadcast to all users</h2>
+          <h2 className="font-display text-2xl">Broadcast to all users</h2>
           <p className="text-xs text-muted-foreground">
             One message lands in every user's unified inbox.
           </p>
@@ -128,7 +137,7 @@ function Broadcast() {
         <Button
           onClick={() => mut.mutate()}
           disabled={!subject.trim() || !body.trim() || mut.isPending}
-          className="bg-gold text-background"
+          className="bg-gold text-white"
         >
           {mut.isPending ? "Sending…" : "Send broadcast"}
         </Button>
@@ -168,17 +177,14 @@ function Users() {
   return (
     <div className="space-y-4">
       <AdminUserProvisioning onCreated={() => void refetch()} />
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label="Total users" value={users.length.toString()} />
         <StatCard label="Total addresses" value={(data?.totalBoxes ?? 0).toString()} />
         <StatCard label="Total storage" value={fmtBytes(data?.total ?? 0)} accent />
       </div>
-      <div className="noir-panel rounded-xl divide-y divide-border overflow-hidden">
+      <div className="noir-panel mail-list divide-y divide-border">
         {users.map((u) => (
-          <div
-            key={u.user_id}
-            className="p-4 flex flex-wrap items-center gap-4 hover:bg-white/[0.02] transition-colors"
-          >
+          <div key={u.user_id} className="mail-row flex flex-wrap items-center gap-4 p-4">
             <div className="flex-1 min-w-[220px]">
               <div className="font-medium">@{u.username}</div>
               <div
@@ -220,8 +226,10 @@ function Users() {
 
 function StatCard({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
-    <div className={`noir-panel rounded-xl p-4 ${accent ? "glow-gold" : ""}`}>
-      <div className="text-[11px] uppercase tracking-widest text-muted-foreground">{label}</div>
+    <div className={`noir-panel rounded-2xl p-4 ${accent ? "glow-gold" : ""}`}>
+      <div className="text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </div>
       <div className={`mt-1 font-display text-3xl ${accent ? "text-gold" : ""}`}>{value}</div>
     </div>
   );
@@ -293,7 +301,7 @@ function Domains() {
 
   return (
     <div>
-      <div className="noir-panel rounded-xl p-4 mb-4 grid gap-2 md:grid-cols-[1fr_auto_auto]">
+      <div className="noir-panel mb-4 grid gap-2 rounded-2xl p-4 md:grid-cols-[1fr_auto_auto]">
         <Input placeholder="example.com" value={name} onChange={(e) => setName(e.target.value)} />
         <Input
           type="date"
@@ -302,15 +310,15 @@ function Domains() {
           className="md:w-48"
           title="Registrar expiration (optional)"
         />
-        <Button onClick={() => add.mutate()} className="bg-gold text-background">
+        <Button onClick={() => add.mutate()} className="bg-gold text-white">
           Add domain
         </Button>
       </div>
-      <div className="noir-panel rounded-xl divide-y divide-border overflow-hidden">
+      <div className="noir-panel mail-list divide-y divide-border">
         {(domains ?? []).map((d) => {
           const s = domainStatus(d.expires_at);
           return (
-            <div key={d.id} className="p-4 flex flex-wrap items-center gap-4">
+            <div key={d.id} className="mail-row flex flex-wrap items-center gap-4 p-4">
               <div className="font-mono flex-1 min-w-[160px]">{d.name}</div>
               <span className={`text-xs ${s.tone}`}>{s.label}</span>
               <Input

@@ -3,7 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/page-header";
+import { ListSkeleton } from "@/components/list-skeleton";
 import { formatDistanceToNowStrict } from "date-fns";
+import { Inbox, Search } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/m/$id")({
   head: () => ({
@@ -36,7 +39,7 @@ function MailboxView() {
       ).data,
   });
 
-  const { data: msgs } = useQuery({
+  const { data: msgs, isLoading: messagesLoading } = useQuery({
     queryKey: ["mb-msgs", id, debounced],
     queryFn: async () => {
       const search = debounced
@@ -62,45 +65,63 @@ function MailboxView() {
   const unread = (msgs ?? []).filter((m) => !m.seen).length;
 
   return (
-    <div className="p-8 max-w-5xl mx-auto">
-      <div className="mb-6">
-        <h1 className="font-display text-4xl text-gold">
-          {mb?.local_part}@{mb?.domain?.name}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {msgs?.length ?? 0} messages · {unread} unread
-        </p>
-      </div>
-      <Input
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="Search…"
-        className="mb-4 bg-card"
+    <div className="app-page">
+      <PageHeader
+        eyebrow="Mailbox"
+        title={
+          <span className="break-all">
+            {mb?.local_part}@{mb?.domain?.name}
+          </span>
+        }
+        description={
+          messagesLoading
+            ? "Syncing this mailbox…"
+            : `${msgs?.length ?? 0} messages · ${unread} unread`
+        }
       />
-      <div className="noir-panel rounded-xl divide-y divide-border overflow-hidden">
-        {(msgs ?? []).length === 0 && (
-          <div className="p-12 text-center text-muted-foreground">No messages.</div>
+      <div className="noir-panel relative mb-4 rounded-2xl p-2.5">
+        <Search className="pointer-events-none absolute left-6 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          aria-label="Search this mailbox"
+          value={q}
+          onChange={(event) => setQ(event.target.value)}
+          placeholder="Search this mailbox…"
+          className="bg-black/15 pl-10"
+        />
+      </div>
+      <div className="noir-panel mail-list divide-y divide-border">
+        {messagesLoading && <ListSkeleton />}
+        {!messagesLoading && (msgs ?? []).length === 0 && (
+          <div className="empty-state">
+            <div>
+              <Inbox className="mx-auto mb-4 size-8 text-brand-secondary/70" />
+              No messages yet.
+            </div>
+          </div>
         )}
-        {(msgs ?? []).map((m, i) => (
-          <Link
-            key={m.id}
-            to="/msg/$id"
-            params={{ id: m.id }}
-            className="cv-auto flex items-center gap-4 px-5 py-3 hover:bg-accent"
-            style={{ animation: `jm-fade-up 260ms ease-out both ${Math.min(i, 20) * 12}ms` }}
-          >
-            <span className={`h-2 w-2 rounded-full ${m.seen ? "bg-transparent" : "bg-gold"}`} />
-            <span
-              className={`flex-1 min-w-0 ${m.seen ? "text-muted-foreground" : "font-semibold"}`}
+        {!messagesLoading &&
+          (msgs ?? []).map((m, i) => (
+            <Link
+              key={m.id}
+              to="/msg/$id"
+              params={{ id: m.id }}
+              className="mail-row cv-auto flex items-center gap-4 px-5 py-3.5"
+              style={{ animation: `jm-fade-up 420ms ease-out both ${Math.min(i, 8) * 26}ms` }}
             >
-              <span className="block truncate">{m.subject || "(no subject)"}</span>
-              <span className="block text-xs text-muted-foreground truncate">{m.sender}</span>
-            </span>
-            <span className="text-xs text-muted-foreground w-16 text-right">
-              {formatDistanceToNowStrict(new Date(m.received_at))}
-            </span>
-          </Link>
-        ))}
+              <span
+                className={`size-2 rounded-full ${m.seen ? "bg-transparent" : "signal-dot jm-pulse-gold"}`}
+              />
+              <span
+                className={`flex-1 min-w-0 ${m.seen ? "text-muted-foreground" : "font-semibold"}`}
+              >
+                <span className="block truncate">{m.subject || "(no subject)"}</span>
+                <span className="block text-xs text-muted-foreground truncate">{m.sender}</span>
+              </span>
+              <span className="text-xs text-muted-foreground w-16 text-right">
+                {formatDistanceToNowStrict(new Date(m.received_at))}
+              </span>
+            </Link>
+          ))}
       </div>
     </div>
   );

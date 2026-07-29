@@ -47,12 +47,12 @@ export function AdminUserProvisioning({ onCreated }: { onCreated: () => void }) 
   });
 
   return (
-    <div className="noir-panel rounded-xl p-5 space-y-4">
+    <div className="noir-panel space-y-4 rounded-2xl p-5">
       <div>
-        <h2 className="font-display text-xl text-gold">Create a local account</h2>
+        <h2 className="font-display text-xl">Create a local account</h2>
         <p className="text-xs text-muted-foreground mt-1">
-          Public signup is disabled. Create your friend's account here and share the one-time
-          password securely.
+          Jellyfin members can self-register. Use this for a service-only account, then share its
+          one-time password securely.
         </p>
       </div>
       <div className="grid gap-3 md:grid-cols-2">
@@ -96,7 +96,7 @@ export function AdminUserProvisioning({ onCreated }: { onCreated: () => void }) 
       </div>
       <Button
         type="button"
-        className="bg-gold text-background"
+        className="bg-gold text-white"
         disabled={!username.trim() || password.length < 12 || mutation.isPending}
         onClick={() => mutation.mutate()}
       >

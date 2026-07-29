@@ -3,9 +3,9 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, SendHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/dm/$id")({
@@ -70,7 +70,8 @@ function DMThread() {
   }, [id, user, thread, msgs?.length]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    bottomRef.current?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth" });
   }, [msgs?.length]);
 
   const send = async () => {
@@ -104,15 +105,17 @@ function DMThread() {
   }
 
   return (
-    <div className="flex flex-col h-screen">
-      <div className="p-4 border-b border-border flex items-center gap-3">
+    <div className="dm-thread flex h-[calc(100dvh-4rem)] flex-col md:h-screen">
+      <div className="flex items-center gap-3 border-b border-border bg-background/55 p-4 backdrop-blur-xl sm:px-6">
         <button
+          type="button"
+          aria-label="Back to conversations"
           onClick={() => navigate({ to: "/dm" })}
-          className="text-muted-foreground hover:text-foreground"
+          className="grid size-10 place-items-center rounded-xl border border-border bg-card/45 text-muted-foreground hover:border-primary/30 hover:text-foreground"
         >
           <ArrowLeft size={16} />
         </button>
-        <div className="h-9 w-9 rounded-full bg-gold/20 text-gold flex items-center justify-center font-display">
+        <div className="grid size-11 place-items-center rounded-xl bg-gradient-to-br from-brand/35 to-brand-secondary/20 font-display font-bold text-brand-secondary ring-1 ring-brand-secondary/15">
           {(thread?.other?.username ?? "?")[0]?.toUpperCase()}
         </div>
         <div className="min-w-0">
@@ -121,17 +124,17 @@ function DMThread() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-2">
+      <div className="flex-1 space-y-3 overflow-y-auto p-4 sm:p-6">
         {(msgs ?? []).map((m) => {
           const mine = m.sender_id === user!.id;
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"} jm-fade-up`}>
               <div
-                className={`max-w-[70%] rounded-2xl px-4 py-2 text-sm ${mine ? "bg-gold text-background" : "bg-card border border-border"}`}
+                className={`max-w-[82%] rounded-2xl px-4 py-2.5 text-sm shadow-lg sm:max-w-[70%] ${mine ? "bg-gradient-to-br from-brand to-primary text-white rounded-br-md" : "border border-border bg-card/80 text-foreground rounded-bl-md backdrop-blur"}`}
               >
                 <div className="whitespace-pre-wrap">{m.body}</div>
                 <div
-                  className={`text-[10px] mt-1 ${mine ? "text-background/70" : "text-muted-foreground"}`}
+                  className={`mt-1 text-[0.68rem] ${mine ? "text-white/65" : "text-muted-foreground"}`}
                 >
                   {new Date(m.created_at).toLocaleTimeString()}
                   {mine && m.seen_at && " · seen"}
@@ -143,20 +146,30 @@ function DMThread() {
         <div ref={bottomRef} />
       </div>
 
-      <div className="p-4 border-t border-border flex gap-2">
-        <Input
+      <div className="flex items-end gap-2 border-t border-border bg-background/65 p-3 backdrop-blur-xl sm:p-4">
+        <Textarea
+          aria-label="Message"
           maxLength={10000}
           value={body}
           onChange={(e) => setBody(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && (e.preventDefault(), send())}
           placeholder="Type a message…"
+          rows={1}
+          className="max-h-40 min-h-11 resize-none py-3"
         />
         <Button
+          type="button"
+          size="icon"
+          aria-label={sending ? "Sending message" : "Send message"}
           onClick={send}
           disabled={sending || !body.trim()}
-          className="bg-gold text-background"
+          className="bg-gold shrink-0 text-white"
         >
-          {sending ? "Sending…" : "Send"}
+          {sending ? (
+            <span className="size-4 animate-spin rounded-full border-2 border-white/30 border-t-white motion-reduce:animate-none" />
+          ) : (
+            <SendHorizontal />
+          )}
         </Button>
       </div>
     </div>

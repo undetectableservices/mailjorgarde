@@ -1,11 +1,15 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { ArrowRight, KeyRound, MessageCircleMore, Radio, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
-import { Input } from "@/components/ui/input";
+
+import { BrandLockup, BrandMark } from "@/components/brand-mark";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { supabase } from "@/integrations/supabase/client";
 
 const search = z.object({ next: z.string().optional() });
 
@@ -145,152 +149,234 @@ function AuthPage() {
   };
 
   return (
-    <div className="dark min-h-screen bg-background flex items-center justify-center px-4 relative overflow-hidden">
+    <div className="auth-shell dark grid min-h-screen lg:grid-cols-[minmax(0,1.08fr)_minmax(30rem,0.92fr)]">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 opacity-60"
-        style={{
-          background:
-            "radial-gradient(60% 40% at 50% 0%, oklch(0.78 0.13 78 / 0.12), transparent 70%), radial-gradient(50% 50% at 100% 100%, oklch(0.78 0.13 78 / 0.06), transparent 70%)",
-        }}
+        className="auth-orb -left-32 top-[15%] size-[28rem] border border-primary/15 bg-primary/5"
       />
-      <div className="w-full max-w-md noir-panel rounded-2xl p-8 jm-fade-up relative glow-gold">
-        <h1 className="font-display text-5xl text-gold text-center tracking-tight">JorgardeMail</h1>
+      <div
+        aria-hidden
+        className="auth-orb -bottom-40 right-[18%] size-[32rem] border border-brand-secondary/10 bg-brand-secondary/5 [animation-delay:-7s]"
+      />
 
-        <div className="mt-5 grid grid-cols-2 rounded-lg bg-muted p-1" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === "signin"}
-            className={`rounded-md px-3 py-2 text-sm transition-colors ${
-              mode === "signin" ? "bg-background text-gold" : "text-muted-foreground"
-            }`}
-            onClick={() => setMode("signin")}
-            disabled={busy}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === "register"}
-            className={`rounded-md px-3 py-2 text-sm transition-colors ${
-              mode === "register" ? "bg-background text-gold" : "text-muted-foreground"
-            }`}
-            onClick={() => setMode("register")}
-            disabled={busy}
-          >
-            Register
-          </button>
+      <section className="relative hidden min-h-screen flex-col justify-between overflow-hidden p-12 lg:flex xl:p-16">
+        <BrandLockup />
+
+        <div className="relative z-10 max-w-2xl py-16">
+          <div className="premium-badge">
+            <Radio className="size-3.5" /> Local-first communications
+          </div>
+          <h1 className="mt-7 max-w-xl font-display text-[clamp(3.4rem,6vw,6.4rem)] leading-[0.88] tracking-[-0.075em] text-white">
+            Your private inbox, <span className="text-gold">reimagined.</span>
+          </h1>
+          <p className="mt-7 max-w-lg text-base leading-7 text-muted-foreground xl:text-lg xl:leading-8">
+            Internet mail at the edge. Direct conversations on your own node. Nothing important
+            needs to leave your infrastructure.
+          </p>
+
+          <div className="mt-10 grid max-w-xl gap-3 sm:grid-cols-3">
+            {[
+              {
+                icon: ShieldCheck,
+                title: "Self-hosted",
+                detail: "Your server, your data",
+              },
+              {
+                icon: MessageCircleMore,
+                title: "Private DMs",
+                detail: "Local conversations",
+              },
+              {
+                icon: KeyRound,
+                title: "Jellyfin gated",
+                detail: "Verified membership",
+              },
+            ].map(({ icon: Icon, title, detail }) => (
+              <div key={title} className="auth-feature rounded-2xl p-4">
+                <Icon className="size-5 text-brand-secondary" />
+                <div className="mt-4 text-sm font-semibold text-foreground">{title}</div>
+                <div className="mt-1 text-xs leading-5 text-muted-foreground">{detail}</div>
+              </div>
+            ))}
+          </div>
         </div>
 
-        {mode === "signin" ? (
-          <form onSubmit={submit} className="mt-4 space-y-3">
-            <div>
-              <Label>Username</Label>
-              <Input
-                autoFocus
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                autoComplete="username"
-                required
-                minLength={3}
-                maxLength={24}
-                value={username}
-                onChange={(event) => setUsername(event.target.value.toLowerCase())}
-                placeholder="jane"
-              />
-            </div>
-            <div>
-              <Label>Password</Label>
-              <Input
-                type="password"
-                autoComplete="current-password"
-                required
-                minLength={6}
-                maxLength={128}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
-            </div>
-            <Button
-              type="submit"
-              disabled={busy}
-              className="w-full bg-gold text-background hover:opacity-90 transition-all"
-            >
-              {busy ? "…" : "Sign in"}
-            </Button>
-          </form>
-        ) : (
-          <form onSubmit={register} className="mt-4 space-y-3">
-            <div>
-              <Label>Jellyfin username</Label>
-              <Input
-                autoFocus
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                autoComplete="username"
-                required
-                minLength={3}
-                maxLength={24}
-                value={jellyfinUsername}
-                onChange={(event) => setJellyfinUsername(event.target.value)}
-                placeholder="Exact Jellyfin name"
-              />
-            </div>
-            <div>
-              <Label>Jellyfin password</Label>
-              <Input
-                type="password"
-                autoComplete="current-password"
-                required
-                maxLength={128}
-                value={jellyfinPassword}
-                onChange={(event) => setJellyfinPassword(event.target.value)}
-              />
-            </div>
-            <div>
-              <Label>New JorgardeMail password</Label>
-              <Input
-                type="password"
-                autoComplete="new-password"
-                required
-                minLength={12}
-                maxLength={128}
-                value={mailPassword}
-                onChange={(event) => setMailPassword(event.target.value)}
-              />
-            </div>
-            <div>
-              <Label>Confirm JorgardeMail password</Label>
-              <Input
-                type="password"
-                autoComplete="new-password"
-                required
-                minLength={12}
-                maxLength={128}
-                value={confirmPassword}
-                onChange={(event) => setConfirmPassword(event.target.value)}
-              />
-            </div>
-            <Button
-              type="submit"
-              disabled={busy}
-              className="w-full bg-gold text-background hover:opacity-90 transition-all"
-            >
-              {busy ? "…" : "Verify Jellyfin & register"}
-            </Button>
-          </form>
-        )}
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="signal-dot size-1.5 rounded-full" />
+          Private node online · encrypted transport through WireGuard
+        </div>
+      </section>
 
-        <p className="text-[11px] text-muted-foreground text-center mt-5">
-          {mode === "register"
-            ? "Your Jellyfin password is verified once and never stored. The API key and user list never leave the server; choose a separate mail password."
-            : "Sign in with your JorgardeMail username and password."}
-        </p>
-      </div>
+      <section className="relative flex min-h-screen items-center justify-center overflow-y-auto px-4 py-8 sm:px-8 lg:border-l lg:border-border lg:bg-black/10">
+        <div className="w-full max-w-[31rem]">
+          <div className="mb-7 flex justify-center lg:hidden">
+            <BrandLockup />
+          </div>
+
+          <div className="auth-card jm-fade-up rounded-[1.75rem] p-6 sm:p-9">
+            <div className="flex items-start justify-between gap-5">
+              <div>
+                <div className="page-eyebrow before:hidden">
+                  {mode === "signin" ? "Secure access" : "Verified registration"}
+                </div>
+                <h2 className="font-display text-3xl text-foreground sm:text-4xl">
+                  {mode === "signin" ? "Welcome back" : "Join the node"}
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  {mode === "signin"
+                    ? "Enter your local JorgardeMail credentials."
+                    : "Confirm your Jellyfin identity, then create a separate mail password."}
+                </p>
+              </div>
+              <BrandMark className="hidden size-12 sm:block" />
+            </div>
+
+            <Tabs
+              value={mode}
+              onValueChange={(value) => setMode(value as "signin" | "register")}
+              className="mt-7"
+            >
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="signin" disabled={busy}>
+                  Sign in
+                </TabsTrigger>
+                <TabsTrigger value="register" disabled={busy}>
+                  Register
+                </TabsTrigger>
+              </TabsList>
+            </Tabs>
+
+            {mode === "signin" ? (
+              <form onSubmit={submit} className="mt-6 space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="signin-username">Username</Label>
+                  <Input
+                    id="signin-username"
+                    autoFocus
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    autoComplete="username"
+                    required
+                    minLength={3}
+                    maxLength={24}
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value.toLowerCase())}
+                    placeholder="yourname"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signin-password">Password</Label>
+                  <Input
+                    id="signin-password"
+                    type="password"
+                    autoComplete="current-password"
+                    required
+                    minLength={6}
+                    maxLength={128}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                </div>
+                <Button type="submit" disabled={busy} className="bg-gold mt-2 w-full text-white">
+                  {busy ? (
+                    <>
+                      <span className="size-4 animate-spin rounded-full border-2 border-white/30 border-t-white motion-reduce:animate-none" />
+                      Signing in
+                    </>
+                  ) : (
+                    <>
+                      Enter workspace <ArrowRight />
+                    </>
+                  )}
+                </Button>
+              </form>
+            ) : (
+              <form onSubmit={register} className="mt-6 space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="register-jellyfin-name">Jellyfin username</Label>
+                    <Input
+                      id="register-jellyfin-name"
+                      autoFocus
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      autoComplete="username"
+                      required
+                      minLength={3}
+                      maxLength={24}
+                      value={jellyfinUsername}
+                      onChange={(event) => setJellyfinUsername(event.target.value)}
+                      placeholder="Exact account name"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="register-jellyfin-password">Jellyfin password</Label>
+                    <Input
+                      id="register-jellyfin-password"
+                      type="password"
+                      autoComplete="current-password"
+                      required
+                      maxLength={128}
+                      value={jellyfinPassword}
+                      onChange={(event) => setJellyfinPassword(event.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="register-mail-password">New JorgardeMail password</Label>
+                  <Input
+                    id="register-mail-password"
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    minLength={12}
+                    maxLength={128}
+                    value={mailPassword}
+                    onChange={(event) => setMailPassword(event.target.value)}
+                    placeholder="12 characters minimum"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="register-confirm-password">Confirm mail password</Label>
+                  <Input
+                    id="register-confirm-password"
+                    type="password"
+                    autoComplete="new-password"
+                    required
+                    minLength={12}
+                    maxLength={128}
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                  />
+                </div>
+                <Button type="submit" disabled={busy} className="bg-gold mt-2 w-full text-white">
+                  {busy ? (
+                    <>
+                      <span className="size-4 animate-spin rounded-full border-2 border-white/30 border-t-white motion-reduce:animate-none" />
+                      Verifying identity
+                    </>
+                  ) : (
+                    <>
+                      Verify & create account <ArrowRight />
+                    </>
+                  )}
+                </Button>
+              </form>
+            )}
+
+            <div className="mt-6 flex gap-3 rounded-2xl border border-border bg-black/15 p-3.5 text-xs leading-5 text-muted-foreground">
+              <ShieldCheck className="mt-0.5 size-4 shrink-0 text-brand-secondary" />
+              <p>
+                {mode === "register"
+                  ? "Your Jellyfin password is checked once and never stored. The API key and private user list stay on this server."
+                  : "Authentication happens against your private JorgardeMail server. No social login or tracking scripts."}
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
