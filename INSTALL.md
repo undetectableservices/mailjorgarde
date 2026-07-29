@@ -254,6 +254,20 @@ verified pre-update backup is taken. If installation fails, the `current`
 symlink is restored to the previous code release. Database migrations are not
 automatically reversed, which is why the pre-update dump matters.
 
+If the very first installation fails, keep `/etc/mailjorgarde/mailjorgarde.env`
+and the `mailjorgarde_db_data` volume. Fix or update the checkout, then retry:
+
+```bash
+sudo git pull --ff-only
+sudo ./run.sh --rebuild
+```
+
+Every retry reconciles the database roles, passwords, auth-schema ownership,
+and existing helper ownership before GoTrue starts, without replacing the SQL
+bodies managed by GoTrue's migrations. Failed first-install containers are
+removed automatically, while named volumes and private configuration remain
+available for recovery.
+
 Stop and remove the systemd units/containers while retaining all recoverable
 state:
 

@@ -88,6 +88,7 @@ while [[ $# -gt 0 ]]; do
     --installed-run) INSTALLED_RUN=1 ;;
     --service-start) set_action service-start ;;
     --service-stop) set_action service-stop ;;
+    --failed-install-cleanup) set_action failed-install-cleanup ;;
     -h|--help) usage; exit 0 ;;
     *) die "Unknown option: $1 (use --help)" ;;
   esac
@@ -195,6 +196,9 @@ copy_release_and_run() {
       systemctl restart "${SERVICE_NAME}.service" >/dev/null 2>&1 \
         || warn "Previous release link was restored, but its service needs a manual restart."
     else
+      log "Removing containers from the failed first installation (persistent data is retained)"
+      /bin/bash "${destination}/run.sh" --installed-run --failed-install-cleanup \
+        || warn "Failed containers could not be removed; the next installation will still reconcile them."
       systemctl disable --now "${SERVICE_NAME}.service" >/dev/null 2>&1 || true
       systemctl disable --now "${BACKUP_SERVICE_NAME}.timer" >/dev/null 2>&1 || true
       unlink "$CURRENT_LINK" 2>/dev/null || true
@@ -216,7 +220,7 @@ if [[ $INSTALLED_RUN -eq 0 ]]; then
       # Support removing a pre-hardening deployment that still runs here.
       ENV_FILE="${SOURCE_DIR}/.env"
       ;;
-    service-start|service-stop)
+    service-start|service-stop|failed-install-cleanup)
       die "Internal service actions must run from ${CURRENT_LINK}."
       ;;
   esac
@@ -329,8 +333,16 @@ service_stop() {
   "${COMPOSE[@]}" stop --timeout 60
 }
 
+failed_install_cleanup() {
+  preflight_docker
+  require_complete_config
+  compose_for_mode
+  "${COMPOSE[@]}" down --remove-orphans --timeout 60
+}
+
 if [[ "$ACTION" == "service-start" ]]; then service_start; exit 0; fi
 if [[ "$ACTION" == "service-stop" ]]; then service_stop; exit 0; fi
+if [[ "$ACTION" == "failed-install-cleanup" ]]; then failed_install_cleanup; exit 0; fi
 
 preflight_full
 acquire_lock
@@ -841,7 +853,7 @@ BUILD_FLAGS=()
 log "Starting the stack and waiting for readiness"
 if ! "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 240; then
   "${COMPOSE[@]}" ps || true
-  "${COMPOSE[@]}" logs --tail 100 schema-init auth gateway web smtp || true
+  "${COMPOSE[@]}" logs --tail 100 auth-bootstrap schema-init auth gateway web smtp || true
   die "The stack did not become healthy; systemd was not installed/updated."
 fi
 

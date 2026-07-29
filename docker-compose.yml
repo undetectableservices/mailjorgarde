@@ -22,11 +22,35 @@ services:
       - ./selfhost/db/init:/docker-entrypoint-initdb.d:ro
     networks: [backend]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      # The init entrypoint runs a temporary socket-only server. Requiring TCP
+      # prevents dependent services from starting before the real server.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d postgres"]
       interval: 5s
       timeout: 5s
       retries: 30
     stop_grace_period: 60s
+    logging: *default-logging
+
+  # Runs on every deployment, not only when PostgreSQL creates a fresh volume.
+  # This keeps auth role ownership/passwords repairable after an interrupted
+  # first boot and before GoTrue attempts its own migrations.
+  auth-bootstrap:
+    image: postgres:15-alpine
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      AUTHENTICATOR_PASSWORD: ${AUTHENTICATOR_PASSWORD:?AUTHENTICATOR_PASSWORD is required}
+      AUTH_ADMIN_PASSWORD: ${AUTH_ADMIN_PASSWORD:?AUTH_ADMIN_PASSWORD is required}
+    volumes:
+      - ./selfhost/db:/selfhost/db:ro
+    entrypoint: ["/bin/sh", "/selfhost/db/init/00-bootstrap.sh", "/selfhost/db/reconcile-auth.sql"]
+    networks: [backend]
     logging: *default-logging
 
   auth:
@@ -35,6 +59,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      auth-bootstrap:
+        condition: service_completed_successfully
     environment:
       GOTRUE_API_HOST: 0.0.0.0
       PORT: 9999
