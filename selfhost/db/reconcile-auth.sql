@@ -58,6 +58,30 @@ BEGIN
   );
 END $$;
 
+-- The original bootstrap shipped helper bodies before GoTrue's first
+-- migration and owned them as postgres. If migration 00 has not committed,
+-- remove only those four helpers and let GoTrue create its canonical versions.
+-- DROP is intentionally not CASCADE: unexpected dependencies stop recovery
+-- instead of deleting application objects.
+DO $$
+DECLARE
+  initial_migration_applied boolean := false;
+BEGIN
+  IF to_regclass('auth.schema_migrations') IS NOT NULL THEN
+    EXECUTE
+      'SELECT EXISTS (SELECT 1 FROM auth.schema_migrations WHERE version = ''00'')'
+      INTO initial_migration_applied;
+  END IF;
+
+  IF NOT initial_migration_applied THEN
+    RAISE NOTICE 'Auth migration 00 is not applied; removing legacy bootstrap helpers';
+    EXECUTE 'DROP FUNCTION IF EXISTS auth.uid()';
+    EXECUTE 'DROP FUNCTION IF EXISTS auth.role()';
+    EXECUTE 'DROP FUNCTION IF EXISTS auth.email()';
+    EXECUTE 'DROP FUNCTION IF EXISTS auth.jwt()';
+  END IF;
+END $$;
+
 -- Repair objects left by an interrupted/older bootstrap, while preserving
 -- the function bodies installed by GoTrue migrations.
 DO $$
@@ -82,6 +106,30 @@ BEGIN
       helper_name
     );
   END LOOP;
+END $$;
+
+DO $$
+DECLARE
+  wrong_owners text;
+BEGIN
+  IF (SELECT nspowner FROM pg_namespace WHERE nspname = 'auth')
+       IS DISTINCT FROM 'supabase_auth_admin'::regrole THEN
+    RAISE EXCEPTION 'supabase_auth_admin does not own the auth schema';
+  END IF;
+
+  SELECT string_agg(format('auth.%I()', p.proname), ', ' ORDER BY p.proname)
+    INTO wrong_owners
+    FROM pg_proc AS p
+    JOIN pg_namespace AS n ON n.oid = p.pronamespace
+   WHERE n.nspname = 'auth'
+     AND p.pronargs = 0
+     AND p.prokind = 'f'
+     AND p.proname = ANY (ARRAY['jwt', 'uid', 'role', 'email'])
+     AND p.proowner <> 'supabase_auth_admin'::regrole;
+
+  IF wrong_owners IS NOT NULL THEN
+    RAISE EXCEPTION 'GoTrue helper ownership repair failed: %', wrong_owners;
+  END IF;
 END $$;
 
 COMMIT;

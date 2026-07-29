@@ -850,6 +850,18 @@ BUILD_FLAGS=()
 [[ $REBUILD -eq 1 ]] && BUILD_FLAGS+=(--no-cache --pull)
 "${COMPOSE[@]}" build "${BUILD_FLAGS[@]}" || die "Image build failed."
 
+if [[ -n "$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT_NAME}")" ]]; then
+  log "Quiescing the existing stack before database/auth reconciliation"
+  "${COMPOSE[@]}" stop --timeout 60 \
+    || die "Could not stop the existing stack cleanly before the update."
+fi
+
+# Compose may otherwise reuse successful one-shot containers and satisfy
+# depends_on from their old exit status. Force both reconciliation jobs to run
+# against this release before any long-running service starts.
+"${COMPOSE[@]}" rm -sf auth-bootstrap schema-init >/dev/null \
+  || die "Could not reset the database reconciliation jobs."
+
 log "Starting the stack and waiting for readiness"
 if ! "${COMPOSE[@]}" up -d --remove-orphans --wait --wait-timeout 240; then
   "${COMPOSE[@]}" ps || true

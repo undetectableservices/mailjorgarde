@@ -34,6 +34,24 @@ run_psql() {
   fi
 }
 
+run_auth_psql() {
+  if [ -n "${POSTGRES_HOST:-}" ]; then
+    PGPASSWORD="$AUTH_ADMIN_PASSWORD" \
+      psql -v ON_ERROR_STOP=1 \
+        --host "$POSTGRES_HOST" \
+        --port "${POSTGRES_PORT:-5432}" \
+        --username supabase_auth_admin \
+        --dbname "$POSTGRES_DB" \
+        "$@"
+  else
+    PGPASSWORD="$AUTH_ADMIN_PASSWORD" \
+      psql -v ON_ERROR_STOP=1 \
+        --username supabase_auth_admin \
+        --dbname "$POSTGRES_DB" \
+        "$@"
+  fi
+}
+
 wait_for_postgres() {
   [ -n "${POSTGRES_HOST:-}" ] || return 0
 
@@ -63,5 +81,29 @@ ALTER ROLE authenticator       WITH LOGIN NOINHERIT PASSWORD :'authpw';
 ALTER ROLE supabase_auth_admin WITH LOGIN NOINHERIT CREATEROLE PASSWORD :'adminpw';
 COMMIT;
 SQL
+
+auth_check="$(run_auth_psql --tuples-only --no-align <<'SQL'
+SELECT CASE
+  WHEN current_user = 'supabase_auth_admin'
+   AND (SELECT nspowner FROM pg_namespace WHERE nspname = 'auth') = current_user::regrole
+   AND NOT EXISTS (
+     SELECT 1
+       FROM pg_proc AS p
+       JOIN pg_namespace AS n ON n.oid = p.pronamespace
+      WHERE n.nspname = 'auth'
+        AND p.pronargs = 0
+        AND p.prokind = 'f'
+        AND p.proname = ANY (ARRAY['jwt', 'uid', 'role', 'email'])
+        AND p.proowner <> current_user::regrole
+   )
+  THEN 'ok'
+  ELSE 'invalid'
+END;
+SQL
+)"
+[ "$auth_check" = "ok" ] || {
+  echo "[bootstrap] GoTrue database login/ownership verification failed" >&2
+  exit 1
+}
 
 echo "[bootstrap] roles, auth schema, and helper ownership are ready"
