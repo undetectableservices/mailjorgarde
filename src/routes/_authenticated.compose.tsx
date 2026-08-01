@@ -101,6 +101,7 @@ function ComposeMessage() {
       const { data, error } = await supabase
         .from("mailboxes")
         .select("id, local_part, display_name, is_temp, expires_at, domain:domains(name)")
+        .eq("user_id", user!.id)
         .order("created_at", { ascending: true });
       if (error) throw error;
       return (data ?? []).filter(

@@ -134,6 +134,7 @@ function Mailboxes() {
         await supabase
           .from("mailboxes")
           .select("*, domain:domains(name, expires_at)")
+          .eq("user_id", user!.id)
           .order("created_at", { ascending: false })
       ).data ?? [],
   });

@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/page-header";
 import { Search } from "lucide-react";
@@ -19,6 +20,7 @@ export const Route = createFileRoute("/_authenticated/m/$id")({
 
 function MailboxView() {
   const { id } = Route.useParams();
+  const { user } = useAuth();
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
   useEffect(() => {
@@ -27,19 +29,22 @@ function MailboxView() {
   }, [q]);
 
   const { data: mb } = useQuery({
-    queryKey: ["mb", id],
+    queryKey: ["mb", user?.id, id],
+    enabled: !!user,
     queryFn: async () =>
       (
         await supabase
           .from("mailboxes")
           .select("*, domain:domains(name)")
           .eq("id", id)
+          .eq("user_id", user!.id)
           .maybeSingle()
       ).data,
   });
 
   const { data: msgs, isLoading: messagesLoading } = useQuery({
-    queryKey: ["mb-msgs", id, debounced],
+    queryKey: ["mb-msgs", user?.id, id, debounced],
+    enabled: !!user && !!mb,
     queryFn: async () => {
       const search = debounced
         .replace(/[^\p{L}\p{N}@ .+-]/gu, " ")

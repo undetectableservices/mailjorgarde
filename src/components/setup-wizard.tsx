@@ -238,7 +238,7 @@ export function SetupWizard() {
           {steps.map((s, i) => (
             <button key={s} onClick={() => setStep(i)} className="flex items-center gap-2 group">
               <span
-                className={`w-7 h-7 rounded-full grid place-items-center text-xs font-medium transition-all ${i === step ? "bg-gold text-background glow-gold" : i < step ? "bg-gold/20 text-gold" : "bg-muted text-muted-foreground"}`}
+                className={`grid h-7 w-7 place-items-center rounded-full text-xs font-medium transition-[color,background-color,box-shadow] duration-150 ${i === step ? "bg-gold text-background glow-gold" : i < step ? "bg-gold/20 text-gold" : "bg-muted text-muted-foreground"}`}
               >
                 {i < step ? "✓" : i + 1}
               </span>

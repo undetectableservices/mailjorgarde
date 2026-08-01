@@ -5,18 +5,18 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-transparent text-sm font-semibold cursor-pointer transition-[color,background-color,border-color,box-shadow,opacity] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:translate-y-px disabled:pointer-events-none disabled:opacity-45 disabled:cursor-not-allowed disabled:shadow-none [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-xl border border-transparent text-sm font-semibold cursor-pointer transition-[color,background-color,border-color,box-shadow,opacity] duration-150 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45 disabled:cursor-not-allowed disabled:shadow-none [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
         default:
-          "bg-primary text-primary-foreground shadow-[0_10px_28px_-14px_color-mix(in_oklch,var(--primary),transparent_25%)] hover:-translate-y-0.5 hover:brightness-110 hover:shadow-[0_16px_36px_-16px_color-mix(in_oklch,var(--primary),transparent_10%)]",
+          "bg-primary text-primary-foreground shadow-[0_10px_28px_-14px_color-mix(in_oklch,var(--primary),transparent_25%)] hover:bg-primary/90 hover:shadow-[0_16px_36px_-16px_color-mix(in_oklch,var(--primary),transparent_10%)]",
         destructive:
-          "border-destructive/25 bg-destructive/90 text-destructive-foreground shadow-lg hover:-translate-y-0.5 hover:bg-destructive",
+          "border-destructive/25 bg-destructive/90 text-destructive-foreground shadow-lg hover:bg-destructive",
         outline:
-          "border-input bg-card/45 text-foreground shadow-sm backdrop-blur-md hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent hover:text-accent-foreground",
+          "border-input bg-card/70 text-foreground shadow-sm hover:border-primary/35 hover:bg-accent hover:text-accent-foreground",
         secondary:
-          "border-border bg-secondary text-secondary-foreground shadow-sm hover:-translate-y-0.5 hover:bg-secondary/80",
+          "border-border bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80",
         ghost: "text-muted-foreground hover:bg-accent/80 hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
       },

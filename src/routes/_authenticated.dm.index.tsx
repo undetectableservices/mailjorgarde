@@ -200,7 +200,7 @@ function DMPage() {
                 key={profile.user_id}
                 disabled={start.isPending}
                 onClick={() => start.mutate(profile)}
-                className="group flex min-w-0 items-center gap-3 rounded-2xl border border-border/70 bg-card/45 p-3.5 text-left transition hover:-translate-y-0.5 hover:border-primary/35 hover:bg-accent disabled:pointer-events-none disabled:opacity-60 motion-reduce:transform-none"
+                className="group flex min-w-0 items-center gap-3 rounded-2xl border border-border/70 bg-card/60 p-3.5 text-left transition-[color,background-color,border-color,box-shadow] duration-150 ease-out hover:border-primary/35 hover:bg-accent hover:shadow-lg disabled:pointer-events-none disabled:opacity-60"
               >
                 <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand/25 to-brand-secondary/15 font-display font-bold text-brand-secondary ring-1 ring-brand-secondary/15">
                   {profile.username[0]?.toUpperCase()}

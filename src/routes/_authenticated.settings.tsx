@@ -104,6 +104,7 @@ function AccountSettings() {
       const { data, error } = await supabase
         .from("mailboxes")
         .select("id, local_part, domain:domains(name)")
+        .eq("user_id", user!.id)
         .order("created_at");
       if (error) throw error;
       return data ?? [];

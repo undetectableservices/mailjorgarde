@@ -105,6 +105,7 @@ function Shell() {
       const { data } = await supabase
         .from("mailboxes")
         .select("id, local_part, is_temp, expires_at, domain:domains(name)")
+        .eq("user_id", user!.id)
         .order("created_at", { ascending: false });
       return data ?? [];
     },

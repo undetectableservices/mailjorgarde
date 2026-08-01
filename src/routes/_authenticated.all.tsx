@@ -3,7 +3,6 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
 import { Inbox, Search } from "lucide-react";
 import { MailMessageList } from "@/components/mail-message-list";
@@ -86,18 +85,17 @@ function AllMail() {
       />
 
       <div className="noir-panel mb-4 flex flex-col gap-3 rounded-2xl p-2.5 sm:flex-row">
-        <div className="flex gap-2 overflow-x-auto">
+        <div className="folder-switcher" role="group" aria-label="Dossier affiché">
           {FOLDERS.map((name) => (
-            <Button
+            <button
               key={name}
               type="button"
-              size="sm"
-              variant={folder === name ? "default" : "outline"}
-              className={folder === name ? "bg-gold text-white" : ""}
+              aria-pressed={folder === name}
+              className={`folder-switcher-item ${folder === name ? "folder-switcher-item-active" : ""}`}
               onClick={() => setFolder(name)}
             >
               {FOLDER_LABELS[name]}
-            </Button>
+            </button>
           ))}
         </div>
         <div className="relative sm:ml-auto sm:w-full sm:max-w-sm">
