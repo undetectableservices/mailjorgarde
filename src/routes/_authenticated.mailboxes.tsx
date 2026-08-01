@@ -16,6 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PageHeader } from "@/components/page-header";
+import { ConfirmAction } from "@/components/confirm-action";
 import { toast } from "sonner";
 import {
   AtSign,
@@ -188,10 +189,16 @@ function Mailboxes() {
       const { error } = await supabase.rpc("delete_mailbox", { p_mailbox_id: id });
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: async (_result, deletedId) => {
+      qc.setQueryData(["mailboxes-full", user?.id], (current: typeof mailboxes) =>
+        current?.filter((mailbox) => mailbox.id !== deletedId),
+      );
       toast.success("Adresse supprimée");
-      qc.invalidateQueries({ queryKey: ["mailboxes"] });
-      refetch();
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["mailboxes"] }),
+        qc.invalidateQueries({ queryKey: ["mail-unread-by-mailbox"] }),
+        refetch(),
+      ]);
     },
     onError: (error) => toast.error(errorMessage(error, "Impossible de supprimer l’adresse")),
   });
@@ -226,6 +233,32 @@ function Mailboxes() {
       void refetch();
     },
     onError: (error) => toast.error(errorMessage(error, "Impossible de modifier l’adresse")),
+  });
+
+  const setRemaining = useMutation({
+    mutationFn: async ({ id, minutes }: { id: string; minutes: number }) => {
+      const { data, error } = await supabase.rpc("set_mailbox_remaining", {
+        p_mailbox_id: id,
+        p_ttl_minutes: minutes,
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (updated) => {
+      if (updated) {
+        qc.setQueryData(["mailboxes-full", user?.id], (current: typeof mailboxes) =>
+          current?.map((mailbox) =>
+            mailbox.id === updated.id
+              ? { ...mailbox, is_temp: updated.is_temp, expires_at: updated.expires_at }
+              : mailbox,
+          ),
+        );
+      }
+      toast.success("Temps restant personnalisé appliqué");
+      void qc.invalidateQueries({ queryKey: ["mailboxes"] });
+      void refetch();
+    },
+    onError: (error) => toast.error(errorMessage(error, "Impossible de définir cette durée")),
   });
 
   return (
@@ -366,29 +399,27 @@ function Mailboxes() {
               <MailboxLifetimeControl
                 address={`${mb.local_part}@${mb.domain?.name}`}
                 expiresAt={mb.expires_at}
-                pending={extend.isPending}
+                pending={extend.isPending || setRemaining.isPending}
                 onChange={(minutes) => extend.mutate({ id: mb.id, minutes })}
+                onSetRemaining={(minutes) => setRemaining.mutate({ id: mb.id, minutes })}
               />
             )}
             {profile?.account_kind !== "guest" && !REQUIRED_DOMAIN_ALIASES.has(mb.local_part) && (
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Supprimer ${mb.local_part}@${mb.domain?.name}`}
-                disabled={del.isPending}
-                onClick={() => {
-                  const address = `${mb.local_part}@${mb.domain?.name}`;
-                  if (
-                    window.confirm(
-                      `Supprimer ${address} ainsi que tous ses messages ? Cette action est irréversible.`,
-                    )
-                  ) {
-                    del.mutate(mb.id);
-                  }
-                }}
+              <ConfirmAction
+                title={`Supprimer ${mb.local_part}@${mb.domain?.name} ?`}
+                description="L’adresse, ses e-mails et ses pièces jointes seront supprimés définitivement."
+                confirmLabel="Supprimer l’adresse"
+                onConfirm={() => del.mutate(mb.id)}
               >
-                <Trash2 size={16} />
-              </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Supprimer ${mb.local_part}@${mb.domain?.name}`}
+                  disabled={del.isPending}
+                >
+                  <Trash2 size={16} />
+                </Button>
+              </ConfirmAction>
             )}
           </div>
         ))}
@@ -410,18 +441,27 @@ function MailboxLifetimeControl({
   expiresAt,
   pending,
   onChange,
+  onSetRemaining,
 }: {
   address: string;
   expiresAt: string | null;
   pending: boolean;
   onChange: (minutes: number | null) => void;
+  onSetRemaining: (minutes: number) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [customValue, setCustomValue] = useState("60");
+  const [customUnit, setCustomUnit] = useState<"minutes" | "hours" | "days">("minutes");
 
   const choose = (minutes: number | null) => {
     setOpen(false);
     onChange(minutes);
   };
+  const customMinutes = Math.round(
+    Number(customValue) * (customUnit === "days" ? 1440 : customUnit === "hours" ? 60 : 1),
+  );
+  const validCustom =
+    Number.isFinite(customMinutes) && customMinutes >= 10 && customMinutes <= 43200;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -476,6 +516,50 @@ function MailboxLifetimeControl({
                 {preset.shortLabel}
               </Button>
             ))}
+          </div>
+          <div className="mt-4 border-t border-border pt-4">
+            <div className="mb-2 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+              Temps restant personnalisé
+            </div>
+            <div className="grid grid-cols-[1fr_9rem] gap-2">
+              <Input
+                type="number"
+                min={customUnit === "minutes" ? 10 : 1}
+                max={customUnit === "days" ? 30 : customUnit === "hours" ? 720 : 43200}
+                step="1"
+                value={customValue}
+                onChange={(event) => setCustomValue(event.target.value)}
+                aria-label="Durée personnalisée"
+              />
+              <Select
+                value={customUnit}
+                onValueChange={(value) => setCustomUnit(value as typeof customUnit)}
+              >
+                <SelectTrigger aria-label="Unité de durée">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="minutes">Minutes</SelectItem>
+                  <SelectItem value="hours">Heures</SelectItem>
+                  <SelectItem value="days">Jours</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-2 w-full rounded-xl"
+              disabled={!validCustom || pending}
+              onClick={() => {
+                setOpen(false);
+                onSetRemaining(customMinutes);
+              }}
+            >
+              Définir exactement ce temps restant
+            </Button>
+            <p className="mt-2 text-[0.68rem] text-muted-foreground">
+              Minimum 10 minutes, maximum 30 jours.
+            </p>
           </div>
           <Button
             type="button"

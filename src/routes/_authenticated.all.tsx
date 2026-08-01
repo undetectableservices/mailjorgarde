@@ -1,14 +1,12 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
-import { ListSkeleton } from "@/components/list-skeleton";
-import { formatDistanceToNowStrict } from "date-fns";
-import { fr } from "date-fns/locale";
 import { Inbox, Search } from "lucide-react";
+import { MailMessageList } from "@/components/mail-message-list";
 
 const FOLDERS = ["inbox", "sent", "archive", "trash", "spam"] as const;
 type Folder = (typeof FOLDERS)[number];
@@ -61,10 +59,14 @@ function AllMail() {
       const { data } = await query;
       return data ?? [];
     },
-    refetchInterval: 5_000,
+    placeholderData: keepPreviousData,
+    refetchInterval: 10_000,
   });
 
-  const rows = useMemo(() => data ?? [], [data]);
+  const rows = (data ?? []).map((message) => ({
+    ...message,
+    address: `${message.mailboxes?.local_part}@${message.mailboxes?.domains?.name}`,
+  }));
 
   return (
     <div className="app-page">
@@ -110,57 +112,16 @@ function AllMail() {
         </div>
       </div>
 
-      <div className="noir-panel mail-list divide-y divide-border">
-        {isLoading && <ListSkeleton />}
-        {!isLoading && rows.length === 0 && (
-          <div className="empty-state">
-            <div>
-              <Inbox className="mx-auto mb-4 size-8 text-brand-secondary/70" />
-              {debounced
-                ? "Aucun message ne correspond à votre recherche."
-                : `Aucun message dans ${FOLDER_LABELS[folder].toLowerCase()}.`}
-            </div>
-          </div>
-        )}
-        {!isLoading &&
-          rows.map((m, i) => {
-            const addr = `${m.mailboxes?.local_part}@${m.mailboxes?.domains?.name}`;
-            return (
-              <Link
-                key={m.id}
-                to="/msg/$id"
-                params={{ id: m.id }}
-                className="mail-row cv-auto group flex items-center gap-4 px-5 py-3.5"
-                style={{ animation: `jm-fade-up 420ms ease-out both ${Math.min(i, 8) * 26}ms` }}
-              >
-                <span className="relative grid size-10 shrink-0 place-items-center rounded-2xl border border-white/[0.06] bg-white/[0.035] text-xs font-bold text-muted-foreground">
-                  {(m.sender || "?").trim()[0]?.toUpperCase()}
-                  {!m.seen && (
-                    <span className="signal-dot jm-pulse-gold absolute -right-0.5 -top-0.5 size-2 rounded-full" />
-                  )}
-                </span>
-                <span
-                  className={`flex-1 min-w-0 ${m.seen ? "text-muted-foreground" : "font-semibold"}`}
-                >
-                  <span className="block truncate text-[0.94rem]">{m.subject || "Sans objet"}</span>
-                  <span className="mt-1 block truncate text-xs text-muted-foreground">
-                    {m.sender}
-                    {m.body_text ? ` — ${m.body_text.replace(/\s+/g, " ").slice(0, 90)}` : ""}
-                  </span>
-                </span>
-                <span className="hidden max-w-[220px] truncate rounded-full border border-brand-secondary/20 bg-brand-secondary/5 px-2.5 py-1 text-xs text-brand-secondary md:inline">
-                  vers {addr}
-                </span>
-                <span className="text-xs text-muted-foreground w-16 text-right shrink-0">
-                  {formatDistanceToNowStrict(new Date(m.received_at), {
-                    addSuffix: false,
-                    locale: fr,
-                  })}
-                </span>
-              </Link>
-            );
-          })}
-      </div>
+      <MailMessageList
+        messages={rows}
+        loading={isLoading}
+        folder={folder}
+        emptyText={
+          debounced
+            ? "Aucun message ne correspond à votre recherche."
+            : `Aucun message dans ${FOLDER_LABELS[folder].toLowerCase()}.`
+        }
+      />
     </div>
   );
 }

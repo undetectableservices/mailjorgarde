@@ -27,7 +27,13 @@ import {
 } from "@/lib/admin-broadcast.functions";
 import { SetupWizard } from "@/components/setup-wizard";
 import { AdminUserProvisioning, ResetUserPassword } from "@/components/admin-user-provisioning";
-import { deleteUserMailbox, setLocalUserBan, setUserApiAccess } from "@/lib/admin-users.functions";
+import {
+  deleteLocalUser,
+  deleteUserMailbox,
+  setLocalUserBan,
+  setUserApiAccess,
+} from "@/lib/admin-users.functions";
+import { ConfirmAction } from "@/components/confirm-action";
 import {
   Dialog,
   DialogContent,
@@ -185,6 +191,7 @@ function Users() {
   const updateBan = useServerFn(setLocalUserBan);
   const updateApiAccess = useServerFn(setUserApiAccess);
   const removeMailbox = useServerFn(deleteUserMailbox);
+  const removeUser = useServerFn(deleteLocalUser);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const { data, refetch } = useQuery({
     queryKey: ["admin-users-stats"],
@@ -235,6 +242,16 @@ function Users() {
       void refetch();
     },
     onError: (error) => toast.error(errorMessage(error, "Impossible de supprimer cette adresse")),
+  });
+
+  const deleteAccount = useMutation({
+    mutationFn: (userId: string) => removeUser({ data: { userId } }),
+    onSuccess: (result) => {
+      setSelectedUserId(null);
+      toast.success(`Compte @${result.username} supprimé`);
+      void refetch();
+    },
+    onError: (error) => toast.error(errorMessage(error, "Impossible de supprimer ce compte")),
   });
 
   const users = data?.users ?? [];
@@ -317,7 +334,13 @@ function Users() {
         onBan={(userId, duration) => setBan.mutate({ userId, duration })}
         onApiAccess={(userId, enabled) => setApiAccess.mutate({ userId, enabled })}
         onDeleteMailbox={(mailboxId) => deleteMailbox.mutate(mailboxId)}
-        pending={setBan.isPending || setApiAccess.isPending || deleteMailbox.isPending}
+        onDeleteUser={(userId) => deleteAccount.mutate(userId)}
+        pending={
+          setBan.isPending ||
+          setApiAccess.isPending ||
+          deleteMailbox.isPending ||
+          deleteAccount.isPending
+        }
       />
     </div>
   );
@@ -348,6 +371,7 @@ function UserControlDialog({
   onBan,
   onApiAccess,
   onDeleteMailbox,
+  onDeleteUser,
   pending,
 }: {
   user: UserControlEntry | null;
@@ -357,6 +381,7 @@ function UserControlDialog({
   onBan: (userId: string, duration: "1h" | "24h" | "7d" | "permanent" | "none") => void;
   onApiAccess: (userId: string, enabled: boolean) => void;
   onDeleteMailbox: (mailboxId: string) => void;
+  onDeleteUser: (userId: string) => void;
   pending: boolean;
 }) {
   if (!user) return null;
@@ -416,18 +441,21 @@ function UserControlDialog({
               >
                 Bannir 7 jours
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="border-red-400/30 text-red-300"
-                disabled={pending}
-                onClick={() =>
-                  window.confirm(`Bannir définitivement @${user.username} ?`) &&
-                  onBan(user.user_id, "permanent")
-                }
+              <ConfirmAction
+                title={`Bannir @${user.username} définitivement ?`}
+                description="Le compte ne pourra plus se connecter jusqu’à ce qu’un administrateur le débannisse."
+                confirmLabel="Bannir définitivement"
+                onConfirm={() => onBan(user.user_id, "permanent")}
               >
-                <Ban className="size-4" /> Permanent
-              </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-red-400/30 text-red-300"
+                  disabled={pending}
+                >
+                  <Ban className="size-4" /> Permanent
+                </Button>
+              </ConfirmAction>
             </div>
           )}
           {user.is_banned && user.banned_until && (
@@ -473,18 +501,21 @@ function UserControlDialog({
                         : "Permanente"}
                     </div>
                   </div>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    disabled={pending || protectedAlias}
-                    title={protectedAlias ? "Adresse obligatoire" : `Supprimer ${address}`}
-                    onClick={() =>
-                      window.confirm(`Supprimer ${address} et tous ses messages ?`) &&
-                      onDeleteMailbox(mailbox.id)
-                    }
+                  <ConfirmAction
+                    title={`Supprimer ${address} ?`}
+                    description="L’adresse, ses messages et ses pièces jointes seront définitivement supprimés."
+                    confirmLabel="Supprimer l’adresse"
+                    onConfirm={() => onDeleteMailbox(mailbox.id)}
                   >
-                    <Trash2 className="size-4" />
-                  </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      disabled={pending || protectedAlias}
+                      title={protectedAlias ? "Adresse obligatoire" : `Supprimer ${address}`}
+                    >
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </ConfirmAction>
                 </div>
               );
             })}
@@ -493,6 +524,35 @@ function UserControlDialog({
             )}
           </div>
         </section>
+
+        {!self && (
+          <section className="rounded-2xl border border-red-400/20 bg-red-400/[0.05] p-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="flex-1">
+                <div className="font-semibold text-red-200">Supprimer le compte</div>
+                <div className="mt-1 text-xs leading-5 text-muted-foreground">
+                  Supprime le profil, toutes ses adresses, ses e-mails, ses conversations et ses
+                  clés API. Cette action est irréversible.
+                </div>
+              </div>
+              <ConfirmAction
+                title={`Supprimer définitivement @${user.username} ?`}
+                description="Toutes les données liées à ce compte seront détruites. Cette action ne peut pas être annulée."
+                confirmLabel="Supprimer le compte"
+                onConfirm={() => onDeleteUser(user.user_id)}
+              >
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="border-red-400/30 text-red-300 hover:bg-red-400/10 hover:text-red-200"
+                  disabled={pending}
+                >
+                  <Trash2 className="size-4" /> Supprimer le compte
+                </Button>
+              </ConfirmAction>
+            </div>
+          </section>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -611,23 +671,21 @@ function Domains() {
                     updateExpiry.mutate({ id: d.id, value: e.target.value });
                 }}
               />
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label={`Supprimer ${d.name}`}
-                disabled={del.isPending}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      `Supprimer définitivement ${d.name}, toutes ses adresses et tous leurs messages ? Cette action est irréversible.`,
-                    )
-                  ) {
-                    del.mutate(d.id);
-                  }
-                }}
+              <ConfirmAction
+                title={`Supprimer définitivement ${d.name} ?`}
+                description="Toutes les adresses du domaine, leurs messages et leurs pièces jointes seront supprimés."
+                confirmLabel="Supprimer le domaine"
+                onConfirm={() => del.mutate(d.id)}
               >
-                <Trash2 size={16} />
-              </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={`Supprimer ${d.name}`}
+                  disabled={del.isPending}
+                >
+                  <Trash2 size={16} />
+                </Button>
+              </ConfirmAction>
             </div>
           );
         })}

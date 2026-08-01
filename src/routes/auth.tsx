@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowRight, KeyRound, Mail, MessageCircleMore, ShieldCheck, Sparkles } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { z } from "zod";
 import { toast } from "sonner";
 
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
 
 const search = z.object({ next: z.string().optional() });
 
@@ -38,6 +39,7 @@ function usernameToEmail(username: string) {
 
 function AuthPage() {
   const { next } = useSearch({ from: "/auth" });
+  const { acceptSession } = useAuth();
   const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "register">("signin");
   const [username, setUsername] = useState("");
@@ -85,7 +87,17 @@ function AuthPage() {
       })
     : true;
   const safeNext =
-    next?.startsWith("/") && !next.startsWith("//") && !unsafeNextCharacter ? next : "/all";
+    next?.startsWith("/") &&
+    !next.startsWith("//") &&
+    !next.startsWith("/auth") &&
+    !unsafeNextCharacter
+      ? next
+      : "/all";
+
+  useEffect(() => {
+    if (!next?.startsWith("/auth")) return;
+    void navigate({ to: "/auth", search: {}, replace: true });
+  }, [navigate, next]);
 
   const completeSignIn = async (uname: string, submittedPassword: string) => {
     const email = usernameToEmail(uname);
@@ -95,9 +107,10 @@ function AuthPage() {
     });
     if (error || !data.session) throw new Error("Identifiant ou mot de passe incorrect");
 
-    // AuthProvider lives above both the auth and protected route trees, so it
-    // receives SIGNED_IN before this transition and the guard cannot redirect
-    // the successful first attempt back to this form.
+    // Update the route guard synchronously instead of waiting for the async
+    // auth event. This makes both normal and guest login deterministic on the
+    // first click. Never allow a stale `next=/auth` loop.
+    acceptSession(data.session);
     await navigate({ to: safeNext, replace: true });
   };
 

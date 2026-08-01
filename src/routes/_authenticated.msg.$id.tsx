@@ -1,9 +1,10 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   Archive,
   ArrowLeft,
   ArrowUpRight,
+  Ban,
   ChevronDown,
   Download,
   Inbox,
@@ -16,9 +17,18 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { ConfirmAction } from "@/components/confirm-action";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { supabase } from "@/integrations/supabase/client";
 import { createIsolatedEmailDocument, normalizeEmailContentId } from "@/lib/email-html";
+import { extractSenderEmail, senderDomain } from "@/lib/mail-sender";
 
 type MessageAttachment = {
   id: string;
@@ -127,6 +137,7 @@ function MessageDetail() {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<"text" | "html" | "raw">("html");
   const [showHeaders, setShowHeaders] = useState(false);
+  const [blockOpen, setBlockOpen] = useState(false);
 
   const {
     data: message,
@@ -172,6 +183,39 @@ function MessageDetail() {
     () => buildInlineImageMap((message?.attachments as MessageAttachment[] | undefined) ?? []),
     [message?.attachments],
   );
+
+  const blockRule = useMutation({
+    mutationFn: async ({
+      matchType,
+      matchValue,
+      mailboxId,
+    }: {
+      matchType: "email" | "domain";
+      matchValue: string;
+      mailboxId: string | null;
+    }) => {
+      const { error } = await supabase.rpc("create_block_rule", {
+        p_match_type: matchType,
+        p_match_value: matchValue,
+        p_mailbox_id: mailboxId,
+      });
+      if (error) throw error;
+    },
+    onSuccess: async () => {
+      setBlockOpen(false);
+      toast.success(
+        "Règle de blocage ajoutée; les messages correspondants vont dans les indésirables",
+      );
+      await Promise.all([
+        refetch(),
+        queryClient.invalidateQueries({ queryKey: ["all-mail"] }),
+        queryClient.invalidateQueries({ queryKey: ["mb-msgs"] }),
+        queryClient.invalidateQueries({ queryKey: ["mail-unread-by-mailbox"] }),
+        queryClient.invalidateQueries({ queryKey: ["blocked-senders"] }),
+      ]);
+    },
+    onError: () => toast.error("Impossible d’ajouter cette règle de blocage"),
+  });
 
   if (isLoading) {
     return (
@@ -221,18 +265,16 @@ function MessageDetail() {
     await queryClient.invalidateQueries({ queryKey: ["mail-unread-by-mailbox"] });
     navigate({ to: "/all" });
   };
-  const trash = async () => {
+  const trash = async (permanent = false) => {
     let error: { message: string } | null;
-    if (message.folder === "trash") {
-      if (!window.confirm("Supprimer définitivement ce message ? Cette action est irréversible."))
-        return;
+    if (permanent) {
       ({ error } = await supabase.from("messages").delete().eq("id", id));
     } else {
       ({ error } = await supabase.from("messages").update({ folder: "trash" }).eq("id", id));
     }
     if (error) {
       toast.error(
-        message.folder === "trash"
+        permanent
           ? "Impossible de supprimer ce message"
           : "Impossible de déplacer ce message dans la corbeille",
       );
@@ -274,14 +316,43 @@ function MessageDetail() {
               <Archive className="size-4" /> <span className="hidden sm:inline">Archiver</span>
             </Button>
           )}
-          <Button variant="outline" size="sm" onClick={trash}>
-            <Trash2 className="size-4" />
-            <span className="hidden sm:inline">
-              {message.folder === "trash" ? "Supprimer" : "Corbeille"}
-            </span>
-          </Button>
+          {!isSent && extractSenderEmail(message.sender) && (
+            <Button variant="outline" size="sm" onClick={() => setBlockOpen(true)}>
+              <Ban className="size-4" /> <span className="hidden sm:inline">Bloquer</span>
+            </Button>
+          )}
+          {message.folder === "trash" ? (
+            <ConfirmAction
+              title="Supprimer définitivement ce message ?"
+              description="Le message et ses pièces jointes seront détruits sans possibilité de restauration."
+              confirmLabel="Supprimer définitivement"
+              onConfirm={() => void trash(true)}
+            >
+              <Button variant="outline" size="sm" className="border-red-400/25 text-red-300">
+                <Trash2 className="size-4" />
+                <span className="hidden sm:inline">Supprimer</span>
+              </Button>
+            </ConfirmAction>
+          ) : (
+            <Button variant="outline" size="sm" onClick={() => void trash(false)}>
+              <Trash2 className="size-4" />
+              <span className="hidden sm:inline">Corbeille</span>
+            </Button>
+          )}
         </div>
       </div>
+
+      <BlockSenderDialog
+        open={blockOpen}
+        onOpenChange={setBlockOpen}
+        sender={message.sender}
+        address={address}
+        mailboxId={message.mailbox_id}
+        pending={blockRule.isPending}
+        onBlock={(matchType, matchValue, mailboxId) =>
+          blockRule.mutate({ matchType, matchValue, mailboxId })
+        }
+      />
 
       <article className="reader-surface">
         <header className="px-5 py-6 sm:px-8 sm:py-8 lg:px-10">
@@ -439,5 +510,88 @@ function MessageDetail() {
         </Link>
       </div>
     </div>
+  );
+}
+
+function BlockSenderDialog({
+  open,
+  onOpenChange,
+  sender,
+  address,
+  mailboxId,
+  pending,
+  onBlock,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  sender: string;
+  address: string;
+  mailboxId: string;
+  pending: boolean;
+  onBlock: (matchType: "email" | "domain", matchValue: string, mailboxId: string | null) => void;
+}) {
+  const email = extractSenderEmail(sender);
+  const domain = senderDomain(sender);
+  if (!email || !domain) return null;
+
+  const options = [
+    {
+      title: `Cette adresse · ${email}`,
+      description: `Bloquer seulement pour ${address}`,
+      matchType: "email" as const,
+      matchValue: email,
+      scope: mailboxId,
+    },
+    {
+      title: `Tout le domaine · @${domain}`,
+      description: `Bloquer ce domaine seulement pour ${address}`,
+      matchType: "domain" as const,
+      matchValue: domain,
+      scope: mailboxId,
+    },
+    {
+      title: `${email} sur toutes mes adresses`,
+      description: "Appliquer à toutes les adresses actuelles et futures de votre compte",
+      matchType: "email" as const,
+      matchValue: email,
+      scope: null,
+    },
+    {
+      title: `@${domain} sur toutes mes adresses`,
+      description: "Bloquer le domaine pour tout votre compte",
+      matchType: "domain" as const,
+      matchValue: domain,
+      scope: null,
+    },
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl">Bloquer l’expéditeur</DialogTitle>
+          <DialogDescription>
+            Les e-mails correspondants déjà reçus et les prochains seront rangés dans les
+            indésirables sans générer de notification.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-2">
+          {options.map((option) => (
+            <button
+              key={`${option.matchType}-${option.matchValue}-${option.scope ?? "all"}`}
+              type="button"
+              disabled={pending}
+              className="w-full rounded-2xl border border-border bg-black/10 p-4 text-left transition-colors hover:border-red-300/25 hover:bg-red-300/[0.05] disabled:opacity-50"
+              onClick={() => onBlock(option.matchType, option.matchValue, option.scope)}
+            >
+              <span className="block font-semibold text-foreground">{option.title}</span>
+              <span className="mt-1 block text-xs leading-5 text-muted-foreground">
+                {option.description}
+              </span>
+            </button>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -293,13 +293,14 @@
 
   .route-stage {
     min-height: 100dvh;
+    contain: layout paint;
+    view-transition-name: route-stage;
   }
 
   .app-page {
     width: min(100%, 84rem);
     margin-inline: auto;
     padding: clamp(1.25rem, 3.2vw, 3.5rem);
-    animation: jm-page-enter 520ms var(--ease-out-expo) both;
   }
 
   .app-page-narrow {
@@ -382,6 +383,11 @@
     padding: 0.68rem 0.82rem;
     color: var(--sidebar-foreground);
     font-size: 0.875rem;
+    transition:
+      border-color 140ms ease,
+      background-color 140ms ease,
+      color 140ms ease,
+      transform 140ms ease;
   }
 
   .nav-item::before {
@@ -405,11 +411,7 @@
 
   .nav-item-active {
     border-color: oklch(0.82 0.11 225 / 0.19);
-    background: linear-gradient(
-      112deg,
-      oklch(0.59 0.22 285 / 0.22),
-      oklch(0.73 0.13 207 / 0.075)
-    );
+    background: linear-gradient(112deg, oklch(0.59 0.22 285 / 0.22), oklch(0.73 0.13 207 / 0.075));
     color: white;
     box-shadow:
       0 1px 0 oklch(1 0 0 / 0.05) inset,
@@ -424,7 +426,12 @@
     position: relative;
     overflow: hidden;
     border: 1px solid oklch(0.9 0.08 220 / 0.22);
-    background: linear-gradient(125deg, var(--brand), oklch(0.72 0.18 250) 55%, var(--brand-secondary));
+    background: linear-gradient(
+      125deg,
+      var(--brand),
+      oklch(0.72 0.18 250) 55%,
+      var(--brand-secondary)
+    );
     box-shadow:
       0 1px 0 oklch(1 0 0 / 0.18) inset,
       0 18px 40px -22px oklch(0.62 0.22 283 / 0.85),
@@ -494,7 +501,19 @@
     z-index: 1;
     background: linear-gradient(90deg, oklch(0.58 0.16 277 / 0.095), oklch(0.7 0.11 220 / 0.04));
     box-shadow: 0 14px 40px -32px oklch(0.55 0.2 270 / 0.7);
-    transform: translateX(4px) scale(1.002);
+    transform: translateX(2px);
+  }
+
+  .mail-row-selected {
+    background: linear-gradient(90deg, oklch(0.64 0.17 260 / 0.16), oklch(0.72 0.12 215 / 0.06));
+    box-shadow: 0 0 0 1px oklch(0.78 0.12 225 / 0.12) inset;
+  }
+
+  .mail-action-bar {
+    position: sticky;
+    z-index: 20;
+    top: 0.75rem;
+    box-shadow: 0 18px 50px -34px oklch(0.04 0.02 270 / 0.95);
   }
 
   .mail-row:hover::after {
@@ -573,7 +592,13 @@
     border: 1px solid transparent;
     background:
       linear-gradient(145deg, oklch(0.16 0.04 278 / 0.88), oklch(0.1 0.02 274 / 0.92)) padding-box,
-      linear-gradient(130deg, oklch(0.88 0.08 220 / 0.22), transparent 46%, oklch(0.65 0.22 291 / 0.2)) border-box;
+      linear-gradient(
+          130deg,
+          oklch(0.88 0.08 220 / 0.22),
+          transparent 46%,
+          oklch(0.65 0.22 291 / 0.2)
+        )
+        border-box;
     box-shadow:
       0 1px 0 oklch(1 0 0 / 0.055) inset,
       0 40px 90px -50px oklch(0.45 0.23 288 / 0.8);
@@ -807,6 +832,31 @@
 
   .mail-row:hover {
     transform: none;
+  }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+
+::view-transition-old(route-stage) {
+  animation: jm-route-out 90ms ease-out both;
+}
+
+::view-transition-new(route-stage) {
+  animation: jm-route-in 160ms ease-out both;
+}
+
+@keyframes jm-route-out {
+  to {
+    opacity: 0.72;
+  }
+}
+
+@keyframes jm-route-in {
+  from {
+    opacity: 0.72;
   }
 }
 

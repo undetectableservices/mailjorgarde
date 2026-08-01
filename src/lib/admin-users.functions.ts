@@ -20,6 +20,7 @@ const banSchema = z.object({
 });
 const apiAccessSchema = z.object({ userId: z.string().uuid(), enabled: z.boolean() });
 const mailboxIdSchema = z.object({ mailboxId: z.string().uuid() });
+const userIdSchema = z.object({ userId: z.string().uuid() });
 
 type AuthedContext = {
   supabase: SupabaseClient<Database>;
@@ -159,4 +160,33 @@ export const deleteUserMailbox = createServerFn({ method: "POST" })
     const { error } = await supabaseAdmin.from("mailboxes").delete().eq("id", mailbox.id);
     if (error) throw new Error(error.message);
     return { address: `${mailbox.local_part}@${mailbox.domain?.name ?? ""}` };
+  });
+
+export const deleteLocalUser = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(userIdSchema)
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    if (data.userId === context.userId) {
+      throw new Error("Vous ne pouvez pas supprimer votre propre compte");
+    }
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("username")
+      .eq("user_id", data.userId)
+      .maybeSingle();
+    // Preserve RFC-required role addresses if another administrator happened
+    // to own them. The current administrator becomes their owner before the
+    // auth cascade removes the target account.
+    const { error: aliasError } = await supabaseAdmin
+      .from("mailboxes")
+      .update({ user_id: context.userId })
+      .eq("user_id", data.userId)
+      .in("local_part", ["postmaster", "abuse"]);
+    if (aliasError) throw new Error(aliasError.message);
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(data.userId);
+    if (error) throw new Error(error.message);
+    return { userId: data.userId, username: profile?.username ?? "utilisateur" };
   });

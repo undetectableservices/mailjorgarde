@@ -2,8 +2,18 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 
-type Ctx = { session: Session | null; user: User | null; loading: boolean };
-const AuthCtx = createContext<Ctx>({ session: null, user: null, loading: true });
+type Ctx = {
+  session: Session | null;
+  user: User | null;
+  loading: boolean;
+  acceptSession: (session: Session) => void;
+};
+const AuthCtx = createContext<Ctx>({
+  session: null,
+  user: null,
+  loading: true,
+  acceptSession: () => undefined,
+});
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -22,7 +32,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthCtx.Provider value={{ session, user: session?.user ?? null, loading }}>
+    <AuthCtx.Provider
+      value={{
+        session,
+        user: session?.user ?? null,
+        loading,
+        acceptSession: (nextSession) => {
+          setSession(nextSession);
+          setLoading(false);
+        },
+      }}
+    >
       {children}
     </AuthCtx.Provider>
   );

@@ -52,6 +52,41 @@ export type Database = {
           },
         ];
       };
+      blocked_senders: {
+        Row: {
+          created_at: string;
+          id: string;
+          mailbox_id: string | null;
+          match_type: string;
+          match_value: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          mailbox_id?: string | null;
+          match_type: string;
+          match_value: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          mailbox_id?: string | null;
+          match_type?: string;
+          match_value?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "blocked_senders_mailbox_id_fkey";
+            columns: ["mailbox_id"];
+            isOneToOne: false;
+            referencedRelation: "mailboxes";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       dm_attachments: {
         Row: {
           dm_id: string;
@@ -552,6 +587,10 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      create_block_rule: {
+        Args: { p_mailbox_id?: string | null; p_match_type: string; p_match_value: string };
+        Returns: string;
+      };
       admin_set_mailbox_limit: {
         Args: { p_limit: number; p_user_id: string };
         Returns: number;
@@ -689,6 +728,10 @@ export type Database = {
       };
       set_mailbox_lifetime: {
         Args: { p_mailbox_id: string; p_ttl_minutes?: number | null };
+        Returns: Database["public"]["Tables"]["mailboxes"]["Row"];
+      };
+      set_mailbox_remaining: {
+        Args: { p_mailbox_id: string; p_ttl_minutes: number };
         Returns: Database["public"]["Tables"]["mailboxes"]["Row"];
       };
       start_dm_thread: {

@@ -1,13 +1,11 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/page-header";
-import { ListSkeleton } from "@/components/list-skeleton";
-import { formatDistanceToNowStrict } from "date-fns";
-import { fr } from "date-fns/locale";
-import { Inbox, Search } from "lucide-react";
+import { Search } from "lucide-react";
+import { MailMessageList } from "@/components/mail-message-list";
 
 export const Route = createFileRoute("/_authenticated/m/$id")({
   head: () => ({
@@ -60,7 +58,8 @@ function MailboxView() {
         );
       return (await q2).data ?? [];
     },
-    refetchInterval: 5_000,
+    placeholderData: keepPreviousData,
+    refetchInterval: 10_000,
   });
 
   const unread = (msgs ?? []).filter((m) => !m.seen).length;
@@ -90,43 +89,13 @@ function MailboxView() {
           className="bg-black/15 pl-10"
         />
       </div>
-      <div className="noir-panel mail-list divide-y divide-border">
-        {messagesLoading && <ListSkeleton />}
-        {!messagesLoading && (msgs ?? []).length === 0 && (
-          <div className="empty-state">
-            <div>
-              <Inbox className="mx-auto mb-4 size-8 text-brand-secondary/70" />
-              Aucun message pour le moment.
-            </div>
-          </div>
-        )}
-        {!messagesLoading &&
-          (msgs ?? []).map((m, i) => (
-            <Link
-              key={m.id}
-              to="/msg/$id"
-              params={{ id: m.id }}
-              className="mail-row cv-auto flex items-center gap-4 px-5 py-3.5"
-              style={{ animation: `jm-fade-up 420ms ease-out both ${Math.min(i, 8) * 26}ms` }}
-            >
-              <span className="relative grid size-10 shrink-0 place-items-center rounded-2xl border border-white/[0.06] bg-white/[0.035] text-xs font-bold text-muted-foreground">
-                {(m.sender || "?").trim()[0]?.toUpperCase()}
-                {!m.seen && (
-                  <span className="signal-dot jm-pulse-gold absolute -right-0.5 -top-0.5 size-2 rounded-full" />
-                )}
-              </span>
-              <span
-                className={`flex-1 min-w-0 ${m.seen ? "text-muted-foreground" : "font-semibold"}`}
-              >
-                <span className="block truncate">{m.subject || "Sans objet"}</span>
-                <span className="block text-xs text-muted-foreground truncate">{m.sender}</span>
-              </span>
-              <span className="text-xs text-muted-foreground w-16 text-right">
-                {formatDistanceToNowStrict(new Date(m.received_at), { locale: fr })}
-              </span>
-            </Link>
-          ))}
-      </div>
+      <MailMessageList
+        messages={msgs ?? []}
+        loading={messagesLoading}
+        folder="inbox"
+        mailboxId={id}
+        emptyText="Aucun message pour le moment."
+      />
     </div>
   );
 }
