@@ -442,6 +442,49 @@ async function handleValidatedRequest(parsed: z.infer<typeof Body>): Promise<Res
     return json({ ok: false, code: "temporary_failure" }, 503);
   }
 
+  if (result.messages > 0) {
+    try {
+      const { data: apiLinks, error: apiLinkError } = await supabaseAdmin
+        .from("api_mailboxes")
+        .select("mailbox_id, user_id")
+        .in(
+          "mailbox_id",
+          accepted.map((lookup) => lookup.mailboxId),
+        );
+      if (apiLinkError) throw apiLinkError;
+      if (apiLinks?.length) {
+        const { logApiActivity } = await import("@/lib/api-access.server");
+        const recipientByMailbox = new Map(
+          accepted.map((lookup) => [lookup.mailboxId, lookup.recipient]),
+        );
+        const messageByMailbox = new Map(
+          messageRows.map((message) => [message.mailbox_id, message]),
+        );
+        await Promise.all(
+          apiLinks.map((link) => {
+            const message = messageByMailbox.get(link.mailbox_id);
+            return logApiActivity({
+              userId: link.user_id,
+              action: "message_received",
+              mailboxId: link.mailbox_id,
+              address: recipientByMailbox.get(link.mailbox_id) ?? null,
+              status: 201,
+              metadata: {
+                message_id: message?.id,
+                size_bytes: message?.size_bytes,
+                attachments: parsed.attachments.length,
+              },
+            });
+          }),
+        );
+      }
+    } catch (error) {
+      // Mail acceptance must not fail because the secondary audit trail is
+      // temporarily unavailable. The helper itself never logs message bodies.
+      console.error("[inbound] API activity logging failed", error);
+    }
+  }
+
   return json({
     ok: true,
     delivery_id: parsed.delivery_id,

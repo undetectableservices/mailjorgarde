@@ -22,6 +22,8 @@ import { Route as AuthenticatedAllRouteImport } from './routes/_authenticated.al
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated.admin'
 import { Route as AuthenticatedDmIndexRouteImport } from './routes/_authenticated.dm.index'
 import { Route as ApiV1MailboxesRouteImport } from './routes/api/v1/mailboxes'
+import { Route as ApiV1LogsRouteImport } from './routes/api/v1/logs'
+import { Route as ApiV1DomainsRouteImport } from './routes/api/v1/domains'
 import { Route as ApiPublicRegisterRouteImport } from './routes/api/public/register'
 import { Route as ApiPublicInboundRouteImport } from './routes/api/public/inbound'
 import { Route as ApiPublicGuestSessionRouteImport } from './routes/api/public/guest-session'
@@ -30,6 +32,7 @@ import { Route as ApiInternalOutboundHealthRouteImport } from './routes/api/inte
 import { Route as AuthenticatedMsgIdRouteImport } from './routes/_authenticated.msg.$id'
 import { Route as AuthenticatedMIdRouteImport } from './routes/_authenticated.m.$id'
 import { Route as AuthenticatedDmIdRouteImport } from './routes/_authenticated.dm.$id'
+import { Route as ApiV1MailboxesIdRouteImport } from './routes/api/v1/mailboxes.$id'
 import { Route as ApiV1MailboxesIdMessagesRouteImport } from './routes/api/v1/mailboxes.$id.messages'
 
 const AuthRoute = AuthRouteImport.update({
@@ -96,6 +99,16 @@ const ApiV1MailboxesRoute = ApiV1MailboxesRouteImport.update({
   path: '/api/v1/mailboxes',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiV1LogsRoute = ApiV1LogsRouteImport.update({
+  id: '/api/v1/logs',
+  path: '/api/v1/logs',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiV1DomainsRoute = ApiV1DomainsRouteImport.update({
+  id: '/api/v1/domains',
+  path: '/api/v1/domains',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiPublicRegisterRoute = ApiPublicRegisterRouteImport.update({
   id: '/api/public/register',
   path: '/api/public/register',
@@ -137,11 +150,16 @@ const AuthenticatedDmIdRoute = AuthenticatedDmIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AuthenticatedDmRoute,
 } as any)
+const ApiV1MailboxesIdRoute = ApiV1MailboxesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => ApiV1MailboxesRoute,
+} as any)
 const ApiV1MailboxesIdMessagesRoute =
   ApiV1MailboxesIdMessagesRouteImport.update({
-    id: '/$id/messages',
-    path: '/$id/messages',
-    getParentRoute: () => ApiV1MailboxesRoute,
+    id: '/messages',
+    path: '/messages',
+    getParentRoute: () => ApiV1MailboxesIdRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -163,8 +181,11 @@ export interface FileRoutesByFullPath {
   '/api/public/guest-session': typeof ApiPublicGuestSessionRoute
   '/api/public/inbound': typeof ApiPublicInboundRoute
   '/api/public/register': typeof ApiPublicRegisterRoute
+  '/api/v1/domains': typeof ApiV1DomainsRoute
+  '/api/v1/logs': typeof ApiV1LogsRoute
   '/api/v1/mailboxes': typeof ApiV1MailboxesRouteWithChildren
   '/dm/': typeof AuthenticatedDmIndexRoute
+  '/api/v1/mailboxes/$id': typeof ApiV1MailboxesIdRouteWithChildren
   '/api/v1/mailboxes/$id/messages': typeof ApiV1MailboxesIdMessagesRoute
 }
 export interface FileRoutesByTo {
@@ -185,8 +206,11 @@ export interface FileRoutesByTo {
   '/api/public/guest-session': typeof ApiPublicGuestSessionRoute
   '/api/public/inbound': typeof ApiPublicInboundRoute
   '/api/public/register': typeof ApiPublicRegisterRoute
+  '/api/v1/domains': typeof ApiV1DomainsRoute
+  '/api/v1/logs': typeof ApiV1LogsRoute
   '/api/v1/mailboxes': typeof ApiV1MailboxesRouteWithChildren
   '/dm': typeof AuthenticatedDmIndexRoute
+  '/api/v1/mailboxes/$id': typeof ApiV1MailboxesIdRouteWithChildren
   '/api/v1/mailboxes/$id/messages': typeof ApiV1MailboxesIdMessagesRoute
 }
 export interface FileRoutesById {
@@ -210,8 +234,11 @@ export interface FileRoutesById {
   '/api/public/guest-session': typeof ApiPublicGuestSessionRoute
   '/api/public/inbound': typeof ApiPublicInboundRoute
   '/api/public/register': typeof ApiPublicRegisterRoute
+  '/api/v1/domains': typeof ApiV1DomainsRoute
+  '/api/v1/logs': typeof ApiV1LogsRoute
   '/api/v1/mailboxes': typeof ApiV1MailboxesRouteWithChildren
   '/_authenticated/dm/': typeof AuthenticatedDmIndexRoute
+  '/api/v1/mailboxes/$id': typeof ApiV1MailboxesIdRouteWithChildren
   '/api/v1/mailboxes/$id/messages': typeof ApiV1MailboxesIdMessagesRoute
 }
 export interface FileRouteTypes {
@@ -235,8 +262,11 @@ export interface FileRouteTypes {
     | '/api/public/guest-session'
     | '/api/public/inbound'
     | '/api/public/register'
+    | '/api/v1/domains'
+    | '/api/v1/logs'
     | '/api/v1/mailboxes'
     | '/dm/'
+    | '/api/v1/mailboxes/$id'
     | '/api/v1/mailboxes/$id/messages'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -257,8 +287,11 @@ export interface FileRouteTypes {
     | '/api/public/guest-session'
     | '/api/public/inbound'
     | '/api/public/register'
+    | '/api/v1/domains'
+    | '/api/v1/logs'
     | '/api/v1/mailboxes'
     | '/dm'
+    | '/api/v1/mailboxes/$id'
     | '/api/v1/mailboxes/$id/messages'
   id:
     | '__root__'
@@ -281,8 +314,11 @@ export interface FileRouteTypes {
     | '/api/public/guest-session'
     | '/api/public/inbound'
     | '/api/public/register'
+    | '/api/v1/domains'
+    | '/api/v1/logs'
     | '/api/v1/mailboxes'
     | '/_authenticated/dm/'
+    | '/api/v1/mailboxes/$id'
     | '/api/v1/mailboxes/$id/messages'
   fileRoutesById: FileRoutesById
 }
@@ -296,6 +332,8 @@ export interface RootRouteChildren {
   ApiPublicGuestSessionRoute: typeof ApiPublicGuestSessionRoute
   ApiPublicInboundRoute: typeof ApiPublicInboundRoute
   ApiPublicRegisterRoute: typeof ApiPublicRegisterRoute
+  ApiV1DomainsRoute: typeof ApiV1DomainsRoute
+  ApiV1LogsRoute: typeof ApiV1LogsRoute
   ApiV1MailboxesRoute: typeof ApiV1MailboxesRouteWithChildren
 }
 
@@ -392,6 +430,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiV1MailboxesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/v1/logs': {
+      id: '/api/v1/logs'
+      path: '/api/v1/logs'
+      fullPath: '/api/v1/logs'
+      preLoaderRoute: typeof ApiV1LogsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/v1/domains': {
+      id: '/api/v1/domains'
+      path: '/api/v1/domains'
+      fullPath: '/api/v1/domains'
+      preLoaderRoute: typeof ApiV1DomainsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/register': {
       id: '/api/public/register'
       path: '/api/public/register'
@@ -448,12 +500,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDmIdRouteImport
       parentRoute: typeof AuthenticatedDmRoute
     }
+    '/api/v1/mailboxes/$id': {
+      id: '/api/v1/mailboxes/$id'
+      path: '/$id'
+      fullPath: '/api/v1/mailboxes/$id'
+      preLoaderRoute: typeof ApiV1MailboxesIdRouteImport
+      parentRoute: typeof ApiV1MailboxesRoute
+    }
     '/api/v1/mailboxes/$id/messages': {
       id: '/api/v1/mailboxes/$id/messages'
-      path: '/$id/messages'
+      path: '/messages'
       fullPath: '/api/v1/mailboxes/$id/messages'
       preLoaderRoute: typeof ApiV1MailboxesIdMessagesRouteImport
-      parentRoute: typeof ApiV1MailboxesRoute
+      parentRoute: typeof ApiV1MailboxesIdRoute
     }
   }
 }
@@ -500,12 +559,23 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
   AuthenticatedRouteChildren,
 )
 
-interface ApiV1MailboxesRouteChildren {
+interface ApiV1MailboxesIdRouteChildren {
   ApiV1MailboxesIdMessagesRoute: typeof ApiV1MailboxesIdMessagesRoute
 }
 
-const ApiV1MailboxesRouteChildren: ApiV1MailboxesRouteChildren = {
+const ApiV1MailboxesIdRouteChildren: ApiV1MailboxesIdRouteChildren = {
   ApiV1MailboxesIdMessagesRoute: ApiV1MailboxesIdMessagesRoute,
+}
+
+const ApiV1MailboxesIdRouteWithChildren =
+  ApiV1MailboxesIdRoute._addFileChildren(ApiV1MailboxesIdRouteChildren)
+
+interface ApiV1MailboxesRouteChildren {
+  ApiV1MailboxesIdRoute: typeof ApiV1MailboxesIdRouteWithChildren
+}
+
+const ApiV1MailboxesRouteChildren: ApiV1MailboxesRouteChildren = {
+  ApiV1MailboxesIdRoute: ApiV1MailboxesIdRouteWithChildren,
 }
 
 const ApiV1MailboxesRouteWithChildren = ApiV1MailboxesRoute._addFileChildren(
@@ -522,6 +592,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicGuestSessionRoute: ApiPublicGuestSessionRoute,
   ApiPublicInboundRoute: ApiPublicInboundRoute,
   ApiPublicRegisterRoute: ApiPublicRegisterRoute,
+  ApiV1DomainsRoute: ApiV1DomainsRoute,
+  ApiV1LogsRoute: ApiV1LogsRoute,
   ApiV1MailboxesRoute: ApiV1MailboxesRouteWithChildren,
 }
 export const routeTree = rootRouteImport

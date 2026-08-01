@@ -433,6 +433,53 @@ export type Database = {
           },
         ];
       };
+      api_activity_logs: {
+        Row: {
+          action: string;
+          address: string | null;
+          api_key_id: string | null;
+          client_ip: string | null;
+          created_at: string;
+          id: string;
+          mailbox_id: string | null;
+          metadata: Json;
+          status: number;
+          user_id: string;
+        };
+        Insert: {
+          action: string;
+          address?: string | null;
+          api_key_id?: string | null;
+          client_ip?: string | null;
+          created_at?: string;
+          id?: string;
+          mailbox_id?: string | null;
+          metadata?: Json;
+          status?: number;
+          user_id: string;
+        };
+        Update: {
+          action?: string;
+          address?: string | null;
+          api_key_id?: string | null;
+          client_ip?: string | null;
+          created_at?: string;
+          id?: string;
+          mailbox_id?: string | null;
+          metadata?: Json;
+          status?: number;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "api_activity_logs_api_key_id_fkey";
+            columns: ["api_key_id"];
+            isOneToOne: false;
+            referencedRelation: "api_keys";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       api_keys: {
         Row: {
           created_at: string;
@@ -587,6 +634,10 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      create_api_mailbox: {
+        Args: { p_domain_name?: string | null; p_local_part: string; p_user_id: string };
+        Returns: { address: string; created_at: string; id: string }[];
+      };
       create_block_rule: {
         Args: { p_mailbox_id?: string | null; p_match_type: string; p_match_value: string };
         Returns: string;

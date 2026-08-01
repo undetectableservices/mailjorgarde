@@ -42,7 +42,7 @@ export const createApiKey = createServerFn({ method: "POST" })
   .validator(z.object({ name: z.string().trim().min(1).max(80) }))
   .handler(async ({ data, context }) => {
     await assertApiAllowed(context.userId);
-    const { hashApiSecret, newApiSecret } = await import("@/lib/api-access.server");
+    const { hashApiSecret, logApiActivity, newApiSecret } = await import("@/lib/api-access.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { count } = await supabaseAdmin
       .from("api_keys")
@@ -62,6 +62,12 @@ export const createApiKey = createServerFn({ method: "POST" })
       .select("id, name, key_prefix, created_at")
       .single();
     if (error) throw new Error(error.message);
+    await logApiActivity({
+      userId: context.userId,
+      keyId: inserted.id,
+      action: "api_key_created",
+      metadata: { name: inserted.name, key_prefix: inserted.key_prefix },
+    });
     return { ...inserted, secret };
   });
 
@@ -71,11 +77,57 @@ export const revokeApiKey = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertApiAllowed(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: key } = await supabaseAdmin
+      .from("api_keys")
+      .select("name, key_prefix")
+      .eq("id", data.id)
+      .eq("user_id", context.userId)
+      .maybeSingle();
     const { error } = await supabaseAdmin
       .from("api_keys")
       .delete()
       .eq("id", data.id)
       .eq("user_id", context.userId);
     if (error) throw new Error(error.message);
+    const { logApiActivity } = await import("@/lib/api-access.server");
+    await logApiActivity({
+      userId: context.userId,
+      action: "api_key_revoked",
+      metadata: { name: key?.name ?? null, key_prefix: key?.key_prefix ?? null },
+    });
     return { ok: true };
+  });
+
+export const listApiMailboxes = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertApiAllowed(context.userId);
+    const { listOwnedApiMailboxes } = await import("@/lib/api-access.server");
+    return listOwnedApiMailboxes(context.userId);
+  });
+
+export const listApiActivityLogs = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertApiAllowed(context.userId);
+    const { listOwnedApiLogs } = await import("@/lib/api-access.server");
+    return listOwnedApiLogs(context.userId, 250);
+  });
+
+export const deleteApiMailboxFromConsole = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(z.object({ id: z.string().uuid() }))
+  .handler(async ({ data, context }) => {
+    await assertApiAllowed(context.userId);
+    const { deleteOwnedApiMailbox, logApiActivity } = await import("@/lib/api-access.server");
+    const mailbox = await deleteOwnedApiMailbox(context.userId, data.id);
+    if (!mailbox) throw new Error("Adresse API introuvable");
+    await logApiActivity({
+      userId: context.userId,
+      action: "mailbox_deleted_from_console",
+      mailboxId: data.id,
+      address: mailbox.address,
+      metadata: { source: "web_console" },
+    });
+    return mailbox;
   });

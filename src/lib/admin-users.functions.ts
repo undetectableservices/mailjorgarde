@@ -137,6 +137,12 @@ export const setUserApiAccess = createServerFn({ method: "POST" })
     if (!data.enabled) {
       await supabaseAdmin.from("api_keys").delete().eq("user_id", data.userId);
     }
+    const { logApiActivity } = await import("@/lib/api-access.server");
+    await logApiActivity({
+      userId: data.userId,
+      action: data.enabled ? "api_access_granted" : "api_access_revoked",
+      metadata: { changed_by_admin: context.userId },
+    });
     return { userId: data.userId, enabled: data.enabled };
   });
 
