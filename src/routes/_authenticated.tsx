@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Inbox,
+  KeyRound,
   LogOut,
   Mail,
   Menu,
@@ -19,18 +20,14 @@ import { toast } from "sonner";
 
 import { BrandLockup, BrandMark } from "@/components/brand-mark";
 import { supabase } from "@/integrations/supabase/client";
-import { AuthProvider, useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/_authenticated")({
   component: AuthedShell,
 });
 
 function AuthedShell() {
-  return (
-    <AuthProvider>
-      <Guard />
-    </AuthProvider>
-  );
+  return <Guard />;
 }
 
 function Guard() {
@@ -66,7 +63,7 @@ function Shell() {
   const navigate = useNavigate();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const { data: profile } = useQuery({
+  const { data: profile, error: profileError } = useQuery({
     queryKey: ["profile", user?.id],
     enabled: !!user,
     queryFn: async () => {
@@ -74,7 +71,15 @@ function Shell() {
       if (error) throw error;
       return data;
     },
+    refetchInterval: 15_000,
   });
+
+  useEffect(() => {
+    if ((profileError as { code?: string } | null)?.code !== "42501") return;
+    void supabase.auth.signOut({ scope: "local" });
+    toast.error("Votre accès à JorgardeMail a été suspendu");
+    navigate({ to: "/auth" });
+  }, [navigate, profileError]);
 
   const { data: isAdmin } = useQuery({
     queryKey: ["is-admin", user?.id],
@@ -138,12 +143,61 @@ function Shell() {
 
   const unreadMail = Object.values(unreadByMailbox).reduce((total, count) => total + count, 0);
   useNotificationFavicon(unreadMail + (dmUnread ?? 0));
+  const isGuest = profile?.account_kind === "guest";
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    const cleanupSecret = sessionStorage.getItem("jorgardemail.guest.cleanup");
+    if (isGuest && cleanupSecret) {
+      await fetch("/api/public/guest-session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "end", secret: cleanupSecret }),
+      }).catch(() => undefined);
+      sessionStorage.removeItem("jorgardemail.guest.cleanup");
+    }
+    await supabase.auth.signOut({ scope: "local" });
     toast.success("Vous êtes déconnecté");
     navigate({ to: "/auth" });
   };
+
+  useEffect(() => {
+    if (!isGuest) return;
+    const secret = sessionStorage.getItem("jorgardemail.guest.cleanup");
+    if (!secret) return;
+    const command = (action: "heartbeat" | "close") => JSON.stringify({ action, secret });
+    const heartbeat = () =>
+      void fetch("/api/public/guest-session", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: command("heartbeat"),
+        keepalive: true,
+      });
+    const close = () => {
+      navigator.sendBeacon(
+        "/api/public/guest-session",
+        new Blob([command("close")], { type: "application/json" }),
+      );
+    };
+    heartbeat();
+    const heartbeatTimer = window.setInterval(heartbeat, 45_000);
+    const expiryDelay = profile?.guest_expires_at
+      ? Math.max(0, Date.parse(profile.guest_expires_at) - Date.now())
+      : 60 * 60_000;
+    const expiryTimer = window.setTimeout(
+      () => {
+        sessionStorage.removeItem("jorgardemail.guest.cleanup");
+        void supabase.auth.signOut({ scope: "local" });
+        navigate({ to: "/auth" });
+      },
+      Math.min(expiryDelay + 1_000, 2_147_000_000),
+    );
+    window.addEventListener("pagehide", close);
+    return () => {
+      window.clearInterval(heartbeatTimer);
+      window.clearTimeout(expiryTimer);
+      window.removeEventListener("pagehide", close);
+    };
+  }, [isGuest, navigate, profile?.guest_expires_at]);
 
   return (
     <div className="app-shell dark min-h-screen text-foreground md:grid md:grid-cols-[284px_minmax(0,1fr)]">
@@ -181,15 +235,17 @@ function Shell() {
 
         <div className="mx-1 mb-4 h-px bg-gradient-to-r from-transparent via-sidebar-border to-transparent" />
 
-        <div className="px-1 pb-5">
-          <Link
-            to="/compose"
-            onClick={() => setMobileOpen(false)}
-            className="compose-cta flex min-h-12 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-bold text-white"
-          >
-            <SquarePen className="size-4" /> Nouveau message
-          </Link>
-        </div>
+        {!isGuest && (
+          <div className="px-1 pb-5">
+            <Link
+              to="/compose"
+              onClick={() => setMobileOpen(false)}
+              className="compose-cta flex min-h-12 items-center justify-center gap-2 rounded-2xl px-4 text-sm font-bold text-white"
+            >
+              <SquarePen className="size-4" /> Nouveau message
+            </Link>
+          </div>
+        )}
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-1 text-sm">
           <div className="mb-2 px-3 text-[0.68rem] font-bold uppercase tracking-[0.16em] text-muted-foreground/70">
@@ -203,24 +259,38 @@ function Shell() {
           >
             Boîte de réception
           </NavItem>
-          <NavItem
-            to="/dm"
-            icon={<MessageSquare size={16} />}
-            badge={dmUnread || undefined}
-            onNavigate={() => setMobileOpen(false)}
-          >
-            Messages directs
-          </NavItem>
+          {!isGuest && (
+            <NavItem
+              to="/dm"
+              icon={<MessageSquare size={16} />}
+              badge={dmUnread || undefined}
+              onNavigate={() => setMobileOpen(false)}
+            >
+              Messages directs
+            </NavItem>
+          )}
+
+          {(profile?.api_access || isAdmin) && !isGuest && (
+            <NavItem
+              to="/api-access"
+              icon={<KeyRound size={16} />}
+              onNavigate={() => setMobileOpen(false)}
+            >
+              API développeur
+            </NavItem>
+          )}
 
           <div className="mb-1 mt-6 flex items-center justify-between px-3 text-[0.68rem] font-bold uppercase tracking-[0.16em] text-muted-foreground/70">
             <span>Mes adresses</span>
-            <Link
-              to="/mailboxes"
-              aria-label="Créer une adresse"
-              className="grid size-7 place-items-center rounded-lg text-gold hover:bg-sidebar-accent hover:text-foreground"
-            >
-              <Plus size={14} />
-            </Link>
+            {!isGuest && (
+              <Link
+                to="/mailboxes"
+                aria-label="Créer une adresse"
+                className="grid size-7 place-items-center rounded-lg text-gold hover:bg-sidebar-accent hover:text-foreground"
+              >
+                <Plus size={14} />
+              </Link>
+            )}
           </div>
           {(mailboxes ?? []).slice(0, 20).map((mailbox) => (
             <NavItem
@@ -241,7 +311,7 @@ function Shell() {
               )}
             </NavItem>
           ))}
-          {mailboxes && mailboxes.length === 0 && (
+          {!isGuest && mailboxes && mailboxes.length === 0 && (
             <Link to="/mailboxes" className="nav-item text-muted-foreground">
               + Créer votre première adresse
             </Link>
@@ -249,13 +319,15 @@ function Shell() {
         </nav>
 
         <div className="mt-3 space-y-1 border-t border-sidebar-border px-1 pt-3 text-sm">
-          <NavItem
-            to="/mailboxes"
-            icon={<Settings size={16} />}
-            onNavigate={() => setMobileOpen(false)}
-          >
-            Gérer les adresses
-          </NavItem>
+          {!isGuest && (
+            <NavItem
+              to="/mailboxes"
+              icon={<Settings size={16} />}
+              onNavigate={() => setMobileOpen(false)}
+            >
+              Gérer les adresses
+            </NavItem>
+          )}
           <NavItem
             to="/settings"
             icon={<UserRound size={16} />}
@@ -328,7 +400,7 @@ type NavItemProps = NavItemBaseProps &
   (
     | { to: "/m/$id"; params: { id: string } }
     | {
-        to: "/all" | "/dm" | "/compose" | "/mailboxes" | "/settings" | "/admin";
+        to: "/all" | "/dm" | "/compose" | "/mailboxes" | "/settings" | "/admin" | "/api-access";
         params?: never;
       }
   );
@@ -371,15 +443,10 @@ function NavItem(props: NavItemProps) {
 }
 
 function useNotificationFavicon(count: number) {
-  useEffect(
-    () => () => {
-      document.querySelector<HTMLLinkElement>("#notification-favicon")?.remove();
-    },
-    [],
-  );
-
   useEffect(() => {
     if (typeof document === "undefined") return;
+
+    const originalTitle = document.title;
 
     let link = document.querySelector<HTMLLinkElement>("#notification-favicon");
     if (!link) {
@@ -392,10 +459,13 @@ function useNotificationFavicon(count: number) {
     if (count <= 0) {
       link.type = "image/svg+xml";
       link.href = "/icon.svg";
+      document.title = originalTitle.replace(/^● \(\d+\) /, "");
       return;
     }
 
     let cancelled = false;
+    let notificationIcon = "";
+    let highlighted = true;
     const icon = new Image();
     icon.onload = () => {
       if (cancelled) return;
@@ -419,13 +489,27 @@ function useNotificationFavicon(count: number) {
       context.textBaseline = "middle";
       context.fillText(count > 9 ? "9+" : String(count), 96, 32);
 
+      notificationIcon = canvas.toDataURL("image/png");
       link!.type = "image/png";
-      link!.href = canvas.toDataURL("image/png");
+      link!.href = notificationIcon;
     };
     icon.src = "/icon.svg";
 
+    const unreadLabel = `${count} notification${count > 1 ? "s" : ""}`;
+    document.title = `● (${count}) ${unreadLabel} — JorgardeMail`;
+    const interval = window.setInterval(() => {
+      highlighted = !highlighted;
+      link!.type = highlighted ? "image/png" : "image/svg+xml";
+      link!.href = highlighted && notificationIcon ? notificationIcon : "/icon.svg";
+      document.title = highlighted ? `● (${count}) ${unreadLabel} — JorgardeMail` : originalTitle;
+    }, 850);
+
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
+      document.title = originalTitle;
+      link!.type = "image/svg+xml";
+      link!.href = "/icon.svg";
     };
   }, [count]);
 }

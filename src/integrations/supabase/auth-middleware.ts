@@ -94,6 +94,22 @@ export const requireSupabaseAuth = createMiddleware({ type: "function" }).server
       throw new Error("Unauthorized: No user ID found in token");
     }
 
+    const appMetadata = data.claims.app_metadata as
+      | { account_kind?: unknown; guest_expires_at?: unknown }
+      | undefined;
+    if (
+      appMetadata?.account_kind === "guest" &&
+      (typeof appMetadata.guest_expires_at !== "string" ||
+        Date.parse(appMetadata.guest_expires_at) <= Date.now())
+    ) {
+      throw new Error("Unauthorized: Guest session expired");
+    }
+
+    // This RPC also passes through PostgREST's pre-request account lock. It
+    // rejects a newly banned account even while its old JWT is still valid.
+    const { error: accountError } = await supabase.rpc("get_my_profile");
+    if (accountError) throw new Error("Unauthorized: Account unavailable");
+
     return next({
       context: {
         supabase,

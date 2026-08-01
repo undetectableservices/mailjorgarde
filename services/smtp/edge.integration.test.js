@@ -224,6 +224,13 @@ test("SMTP edge rejects unknown recipients and never acknowledges failed persist
   );
   assert.equal(fake.deliveries.length, 0);
 
+  // Explicit open-relay regression: an unrelated sender cannot use this MX
+  // receiver to deliver to an unrelated external domain.
+  const relaySocket = await connectSmtp(smtpPort);
+  assert.match(await command(relaySocket, "MAIL FROM:<test@notyourdomain.example>"), /^250 /);
+  assert.match(await command(relaySocket, "RCPT TO:<randomexternal@gmail.com>"), /^550 /);
+  relaySocket.end();
+
   const abuseSocket = await connectSmtp(smtpPort);
   assert.match(await command(abuseSocket, "MAIL FROM:<sender@example.net>"), /^250 /);
   assert.match(await command(abuseSocket, "RCPT TO:<unknown-cache@example.com>"), /^550 /);

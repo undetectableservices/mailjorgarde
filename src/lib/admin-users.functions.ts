@@ -14,6 +14,12 @@ const username = z
     message: "L’identifiant doit contenir 3 à 24 lettres, chiffres, _ ou -",
   });
 const password = z.string().min(12).max(128);
+const banSchema = z.object({
+  userId: z.string().uuid(),
+  duration: z.enum(["1h", "24h", "7d", "permanent", "none"]),
+});
+const apiAccessSchema = z.object({ userId: z.string().uuid(), enabled: z.boolean() });
+const mailboxIdSchema = z.object({ mailboxId: z.string().uuid() });
 
 type AuthedContext = {
   supabase: SupabaseClient<Database>;
@@ -67,4 +73,90 @@ export const resetLocalUserPassword = createServerFn({ method: "POST" })
     });
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+export const setLocalUserBan = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(banSchema)
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    if (data.userId === context.userId) {
+      throw new Error("Vous ne pouvez pas bannir votre propre compte");
+    }
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const durations = {
+      "1h": "1h",
+      "24h": "24h",
+      "7d": "168h",
+      permanent: "876000h",
+      none: "none",
+    } as const;
+    const { data: updated, error } = await supabaseAdmin.auth.admin.updateUserById(data.userId, {
+      // GoTrue uses Go-style durations. One hundred years acts as a permanent
+      // ban while "none" explicitly restores authentication.
+      ban_duration: durations[data.duration],
+    });
+    if (error) throw new Error(error.message);
+    if (!updated.user) throw new Error("Le compte demandé est introuvable");
+
+    const durationMs = {
+      "1h": 60 * 60_000,
+      "24h": 24 * 60 * 60_000,
+      "7d": 7 * 24 * 60 * 60_000,
+      permanent: 100 * 365 * 24 * 60 * 60_000,
+      none: 0,
+    }[data.duration];
+    const suspendedUntil = durationMs ? new Date(Date.now() + durationMs).toISOString() : null;
+    const { error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .update({ suspended_until: suspendedUntil })
+      .eq("user_id", data.userId);
+    if (profileError) throw new Error(profileError.message);
+
+    return {
+      userId: updated.user.id,
+      banned: data.duration !== "none",
+      bannedUntil: suspendedUntil,
+    };
+  });
+
+export const setUserApiAccess = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(apiAccessSchema)
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin
+      .from("profiles")
+      .update({ api_access: data.enabled })
+      .eq("user_id", data.userId)
+      .eq("account_kind", "member");
+    if (error) throw new Error(error.message);
+    if (!data.enabled) {
+      await supabaseAdmin.from("api_keys").delete().eq("user_id", data.userId);
+    }
+    return { userId: data.userId, enabled: data.enabled };
+  });
+
+export const deleteUserMailbox = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .validator(mailboxIdSchema)
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: mailbox, error: lookupError } = await supabaseAdmin
+      .from("mailboxes")
+      .select("id, local_part, domain:domains(name)")
+      .eq("id", data.mailboxId)
+      .maybeSingle();
+    if (lookupError || !mailbox) throw new Error("Adresse introuvable");
+    if (["postmaster", "abuse"].includes(mailbox.local_part)) {
+      throw new Error(
+        "Les adresses postmaster et abuse sont obligatoires et ne peuvent pas être supprimées",
+      );
+    }
+    const { error } = await supabaseAdmin.from("mailboxes").delete().eq("id", mailbox.id);
+    if (error) throw new Error(error.message);
+    return { address: `${mailbox.local_part}@${mailbox.domain?.name ?? ""}` };
   });

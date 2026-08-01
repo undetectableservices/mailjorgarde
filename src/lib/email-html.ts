@@ -54,6 +54,9 @@ const URL_ATTRIBUTES = new Set([
   "xlink:href",
 ]);
 
+const SAFE_LINK_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
+const SAFE_DATA_IMAGE = /^data:image\/(?:gif|jpeg|png|webp);base64,[a-z0-9+/]*={0,2}$/i;
+
 function escapeHtml(value: string): string {
   return value
     .replaceAll("&", "&amp;")
@@ -73,13 +76,51 @@ export function normalizeEmailContentId(value: string): string {
   return normalized.replace(/^<|>$/g, "").trim().toLowerCase();
 }
 
-function sanitizeEmailBody(html: string, inlineImages: ReadonlyMap<string, string>): string {
+function safeLink(value: string): string | null {
+  const trimmed = value.trim();
+  if (
+    !trimmed ||
+    [...trimmed].some((character) => {
+      const code = character.charCodeAt(0);
+      return code < 32 || code === 127;
+    })
+  )
+    return null;
+  try {
+    const parsed = new URL(trimmed);
+    return SAFE_LINK_PROTOCOLS.has(parsed.protocol) ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeStyleSheet(css: string): string {
+  return css
+    .replace(/@import[\s\S]*?(?:;|$)/gi, "")
+    .replace(/url\s*\([^)]*\)/gi, "none")
+    .replace(/expression\s*\([^)]*\)/gi, "")
+    .replace(/(?:behavior|-moz-binding)\s*:[^;}]+[;}]?/gi, "")
+    .replace(/<\/style/gi, "<\\/style")
+    .slice(0, 128_000);
+}
+
+function sanitizeEmailBody(
+  html: string,
+  inlineImages: ReadonlyMap<string, string>,
+): { body: string; styles: string } {
   // DOMParser is used only when the user opens the HTML tab in a browser. If
   // this function is ever called during SSR, failing closed to escaped source
   // is safer than attempting to sanitize markup with regular expressions.
-  if (typeof DOMParser === "undefined") return `<pre>${escapeHtml(html)}</pre>`;
+  if (typeof DOMParser === "undefined") {
+    return { body: `<pre>${escapeHtml(html)}</pre>`, styles: "" };
+  }
 
   const document = new DOMParser().parseFromString(html, "text/html");
+  const styles = [...document.querySelectorAll("style")]
+    .map((style) => sanitizeStyleSheet(style.textContent || ""))
+    .filter(Boolean)
+    .join("\n");
+  document.querySelectorAll("style").forEach((style) => style.remove());
   document.querySelectorAll(BLOCKED_ELEMENTS).forEach((element) => element.remove());
 
   document.body.querySelectorAll("*").forEach((element) => {
@@ -89,6 +130,18 @@ function sanitizeEmailBody(html: string, inlineImages: ReadonlyMap<string, strin
         const inlineImage = inlineImages.get(normalizeEmailContentId(attribute.value));
         if (inlineImage) {
           element.setAttribute(attribute.name, inlineImage);
+          continue;
+        }
+      }
+      if (name === "src" && element.tagName === "IMG" && SAFE_DATA_IMAGE.test(attribute.value)) {
+        continue;
+      }
+      if (name === "href" && element.tagName === "A") {
+        const href = safeLink(attribute.value);
+        if (href) {
+          element.setAttribute("href", href);
+          element.setAttribute("target", "_blank");
+          element.setAttribute("rel", "noopener noreferrer nofollow");
           continue;
         }
       }
@@ -107,7 +160,7 @@ function sanitizeEmailBody(html: string, inlineImages: ReadonlyMap<string, strin
     }
   });
 
-  return document.body.innerHTML;
+  return { body: document.body.innerHTML, styles };
 }
 
 /**
@@ -145,12 +198,15 @@ export function createIsolatedEmailDocument(
       td { overflow-wrap: anywhere; }
       img { max-width: 100%; height: auto; }
       pre { max-width: 100%; overflow: auto; white-space: pre-wrap; }
+      a { color: #075bd8; text-decoration: underline; text-underline-offset: 2px; }
+      a:hover { color: #003d99; }
+      ${sanitized.styles}
       @media (max-width: 600px) {
         body { padding: 22px 18px; font-size: 16px; }
         table { width: 100% !important; }
       }
     </style>
   </head>
-  <body>${sanitized}</body>
+  <body>${sanitized.body}</body>
 </html>`;
 }

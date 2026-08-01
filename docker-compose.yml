@@ -123,6 +123,7 @@ services:
       PGRST_JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       PGRST_DB_USE_LEGACY_GUCS: "false"
       PGRST_APP_SETTINGS_JWT_SECRET: ${JWT_SECRET}
+      PGRST_DB_PRE_REQUEST: public.check_account_active
     expose: ["3000"]
     networks: [backend]
     logging: *default-logging
@@ -261,7 +262,7 @@ services:
         trap 'exit 0' TERM INT
         while :; do
           if ! psql -v ON_ERROR_STOP=1 -qAt -h db -U postgres -d postgres \
-            -c 'SELECT public.purge_expired_mailboxes();' >/dev/null; then
+            -c 'SELECT public.purge_expired_mailboxes(); SELECT public.purge_expired_guest_accounts();' >/dev/null; then
             echo '[cleanup] purge failed; retrying in 60 seconds' >&2
           fi
           sleep 60

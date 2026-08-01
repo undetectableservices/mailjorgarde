@@ -9,56 +9,51 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated.admin'
-import { Route as AuthenticatedAllRouteImport } from './routes/_authenticated.all'
-import { Route as AuthenticatedComposeRouteImport } from './routes/_authenticated.compose'
-import { Route as AuthenticatedDmRouteImport } from './routes/_authenticated.dm'
-import { Route as AuthenticatedMailboxesRouteImport } from './routes/_authenticated.mailboxes'
-import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated.settings'
+import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
+import { Route as IndexRouteImport } from './routes/index'
 import { Route as ApiHealthzRouteImport } from './routes/api/healthz'
+import { Route as AuthenticatedSettingsRouteImport } from './routes/_authenticated.settings'
+import { Route as AuthenticatedMailboxesRouteImport } from './routes/_authenticated.mailboxes'
+import { Route as AuthenticatedDmRouteImport } from './routes/_authenticated.dm'
+import { Route as AuthenticatedComposeRouteImport } from './routes/_authenticated.compose'
+import { Route as AuthenticatedApiAccessRouteImport } from './routes/_authenticated.api-access'
+import { Route as AuthenticatedAllRouteImport } from './routes/_authenticated.all'
+import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated.admin'
 import { Route as AuthenticatedDmIndexRouteImport } from './routes/_authenticated.dm.index'
-import { Route as AuthenticatedDmIdRouteImport } from './routes/_authenticated.dm.$id'
-import { Route as AuthenticatedMIdRouteImport } from './routes/_authenticated.m.$id'
-import { Route as AuthenticatedMsgIdRouteImport } from './routes/_authenticated.msg.$id'
-import { Route as ApiInternalOutboundHealthRouteImport } from './routes/api/internal/outbound-health'
-import { Route as ApiPublicInboundRouteImport } from './routes/api/public/inbound'
+import { Route as ApiV1MailboxesRouteImport } from './routes/api/v1/mailboxes'
 import { Route as ApiPublicRegisterRouteImport } from './routes/api/public/register'
+import { Route as ApiPublicInboundRouteImport } from './routes/api/public/inbound'
+import { Route as ApiPublicGuestSessionRouteImport } from './routes/api/public/guest-session'
+import { Route as ApiPublicGuestRouteImport } from './routes/api/public/guest'
+import { Route as ApiInternalOutboundHealthRouteImport } from './routes/api/internal/outbound-health'
+import { Route as AuthenticatedMsgIdRouteImport } from './routes/_authenticated.msg.$id'
+import { Route as AuthenticatedMIdRouteImport } from './routes/_authenticated.m.$id'
+import { Route as AuthenticatedDmIdRouteImport } from './routes/_authenticated.dm.$id'
+import { Route as ApiV1MailboxesIdMessagesRouteImport } from './routes/api/v1/mailboxes.$id.messages'
 
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
-  getParentRoute: () => AuthenticatedRoute,
+const ApiHealthzRoute = ApiHealthzRouteImport.update({
+  id: '/api/healthz',
+  path: '/api/healthz',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedAllRoute = AuthenticatedAllRouteImport.update({
-  id: '/all',
-  path: '/all',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedComposeRoute = AuthenticatedComposeRouteImport.update({
-  id: '/compose',
-  path: '/compose',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedDmRoute = AuthenticatedDmRouteImport.update({
-  id: '/dm',
-  path: '/dm',
+const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedMailboxesRoute = AuthenticatedMailboxesRouteImport.update({
@@ -66,45 +61,39 @@ const AuthenticatedMailboxesRoute = AuthenticatedMailboxesRouteImport.update({
   path: '/mailboxes',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const AuthenticatedSettingsRoute = AuthenticatedSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
+const AuthenticatedDmRoute = AuthenticatedDmRouteImport.update({
+  id: '/dm',
+  path: '/dm',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
-const ApiHealthzRoute = ApiHealthzRouteImport.update({
-  id: '/api/healthz',
-  path: '/api/healthz',
-  getParentRoute: () => rootRouteImport,
+const AuthenticatedComposeRoute = AuthenticatedComposeRouteImport.update({
+  id: '/compose',
+  path: '/compose',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedApiAccessRoute = AuthenticatedApiAccessRouteImport.update({
+  id: '/api-access',
+  path: '/api-access',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedAllRoute = AuthenticatedAllRouteImport.update({
+  id: '/all',
+  path: '/all',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 const AuthenticatedDmIndexRoute = AuthenticatedDmIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AuthenticatedDmRoute,
 } as any)
-const AuthenticatedDmIdRoute = AuthenticatedDmIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AuthenticatedDmRoute,
-} as any)
-const AuthenticatedMIdRoute = AuthenticatedMIdRouteImport.update({
-  id: '/m/$id',
-  path: '/m/$id',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const AuthenticatedMsgIdRoute = AuthenticatedMsgIdRouteImport.update({
-  id: '/msg/$id',
-  path: '/msg/$id',
-  getParentRoute: () => AuthenticatedRoute,
-} as any)
-const ApiInternalOutboundHealthRoute =
-  ApiInternalOutboundHealthRouteImport.update({
-    id: '/api/internal/outbound-health',
-    path: '/api/internal/outbound-health',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicInboundRoute = ApiPublicInboundRouteImport.update({
-  id: '/api/public/inbound',
-  path: '/api/public/inbound',
+const ApiV1MailboxesRoute = ApiV1MailboxesRouteImport.update({
+  id: '/api/v1/mailboxes',
+  path: '/api/v1/mailboxes',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicRegisterRoute = ApiPublicRegisterRouteImport.update({
@@ -112,12 +101,55 @@ const ApiPublicRegisterRoute = ApiPublicRegisterRouteImport.update({
   path: '/api/public/register',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicInboundRoute = ApiPublicInboundRouteImport.update({
+  id: '/api/public/inbound',
+  path: '/api/public/inbound',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicGuestSessionRoute = ApiPublicGuestSessionRouteImport.update({
+  id: '/api/public/guest-session',
+  path: '/api/public/guest-session',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPublicGuestRoute = ApiPublicGuestRouteImport.update({
+  id: '/api/public/guest',
+  path: '/api/public/guest',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiInternalOutboundHealthRoute =
+  ApiInternalOutboundHealthRouteImport.update({
+    id: '/api/internal/outbound-health',
+    path: '/api/internal/outbound-health',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const AuthenticatedMsgIdRoute = AuthenticatedMsgIdRouteImport.update({
+  id: '/msg/$id',
+  path: '/msg/$id',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedMIdRoute = AuthenticatedMIdRouteImport.update({
+  id: '/m/$id',
+  path: '/m/$id',
+  getParentRoute: () => AuthenticatedRoute,
+} as any)
+const AuthenticatedDmIdRoute = AuthenticatedDmIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AuthenticatedDmRoute,
+} as any)
+const ApiV1MailboxesIdMessagesRoute =
+  ApiV1MailboxesIdMessagesRouteImport.update({
+    id: '/$id/messages',
+    path: '/$id/messages',
+    getParentRoute: () => ApiV1MailboxesRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/all': typeof AuthenticatedAllRoute
+  '/api-access': typeof AuthenticatedApiAccessRoute
   '/compose': typeof AuthenticatedComposeRoute
   '/dm': typeof AuthenticatedDmRouteWithChildren
   '/mailboxes': typeof AuthenticatedMailboxesRoute
@@ -127,15 +159,20 @@ export interface FileRoutesByFullPath {
   '/m/$id': typeof AuthenticatedMIdRoute
   '/msg/$id': typeof AuthenticatedMsgIdRoute
   '/api/internal/outbound-health': typeof ApiInternalOutboundHealthRoute
+  '/api/public/guest': typeof ApiPublicGuestRoute
+  '/api/public/guest-session': typeof ApiPublicGuestSessionRoute
   '/api/public/inbound': typeof ApiPublicInboundRoute
   '/api/public/register': typeof ApiPublicRegisterRoute
+  '/api/v1/mailboxes': typeof ApiV1MailboxesRouteWithChildren
   '/dm/': typeof AuthenticatedDmIndexRoute
+  '/api/v1/mailboxes/$id/messages': typeof ApiV1MailboxesIdMessagesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/admin': typeof AuthenticatedAdminRoute
   '/all': typeof AuthenticatedAllRoute
+  '/api-access': typeof AuthenticatedApiAccessRoute
   '/compose': typeof AuthenticatedComposeRoute
   '/mailboxes': typeof AuthenticatedMailboxesRoute
   '/settings': typeof AuthenticatedSettingsRoute
@@ -144,9 +181,13 @@ export interface FileRoutesByTo {
   '/m/$id': typeof AuthenticatedMIdRoute
   '/msg/$id': typeof AuthenticatedMsgIdRoute
   '/api/internal/outbound-health': typeof ApiInternalOutboundHealthRoute
+  '/api/public/guest': typeof ApiPublicGuestRoute
+  '/api/public/guest-session': typeof ApiPublicGuestSessionRoute
   '/api/public/inbound': typeof ApiPublicInboundRoute
   '/api/public/register': typeof ApiPublicRegisterRoute
+  '/api/v1/mailboxes': typeof ApiV1MailboxesRouteWithChildren
   '/dm': typeof AuthenticatedDmIndexRoute
+  '/api/v1/mailboxes/$id/messages': typeof ApiV1MailboxesIdMessagesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -155,6 +196,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/all': typeof AuthenticatedAllRoute
+  '/_authenticated/api-access': typeof AuthenticatedApiAccessRoute
   '/_authenticated/compose': typeof AuthenticatedComposeRoute
   '/_authenticated/dm': typeof AuthenticatedDmRouteWithChildren
   '/_authenticated/mailboxes': typeof AuthenticatedMailboxesRoute
@@ -164,9 +206,13 @@ export interface FileRoutesById {
   '/_authenticated/m/$id': typeof AuthenticatedMIdRoute
   '/_authenticated/msg/$id': typeof AuthenticatedMsgIdRoute
   '/api/internal/outbound-health': typeof ApiInternalOutboundHealthRoute
+  '/api/public/guest': typeof ApiPublicGuestRoute
+  '/api/public/guest-session': typeof ApiPublicGuestSessionRoute
   '/api/public/inbound': typeof ApiPublicInboundRoute
   '/api/public/register': typeof ApiPublicRegisterRoute
+  '/api/v1/mailboxes': typeof ApiV1MailboxesRouteWithChildren
   '/_authenticated/dm/': typeof AuthenticatedDmIndexRoute
+  '/api/v1/mailboxes/$id/messages': typeof ApiV1MailboxesIdMessagesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -175,6 +221,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/admin'
     | '/all'
+    | '/api-access'
     | '/compose'
     | '/dm'
     | '/mailboxes'
@@ -184,15 +231,20 @@ export interface FileRouteTypes {
     | '/m/$id'
     | '/msg/$id'
     | '/api/internal/outbound-health'
+    | '/api/public/guest'
+    | '/api/public/guest-session'
     | '/api/public/inbound'
     | '/api/public/register'
+    | '/api/v1/mailboxes'
     | '/dm/'
+    | '/api/v1/mailboxes/$id/messages'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/auth'
     | '/admin'
     | '/all'
+    | '/api-access'
     | '/compose'
     | '/mailboxes'
     | '/settings'
@@ -201,9 +253,13 @@ export interface FileRouteTypes {
     | '/m/$id'
     | '/msg/$id'
     | '/api/internal/outbound-health'
+    | '/api/public/guest'
+    | '/api/public/guest-session'
     | '/api/public/inbound'
     | '/api/public/register'
+    | '/api/v1/mailboxes'
     | '/dm'
+    | '/api/v1/mailboxes/$id/messages'
   id:
     | '__root__'
     | '/'
@@ -211,6 +267,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/_authenticated/admin'
     | '/_authenticated/all'
+    | '/_authenticated/api-access'
     | '/_authenticated/compose'
     | '/_authenticated/dm'
     | '/_authenticated/mailboxes'
@@ -220,9 +277,13 @@ export interface FileRouteTypes {
     | '/_authenticated/m/$id'
     | '/_authenticated/msg/$id'
     | '/api/internal/outbound-health'
+    | '/api/public/guest'
+    | '/api/public/guest-session'
     | '/api/public/inbound'
     | '/api/public/register'
+    | '/api/v1/mailboxes'
     | '/_authenticated/dm/'
+    | '/api/v1/mailboxes/$id/messages'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -231,17 +292,20 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ApiHealthzRoute: typeof ApiHealthzRoute
   ApiInternalOutboundHealthRoute: typeof ApiInternalOutboundHealthRoute
+  ApiPublicGuestRoute: typeof ApiPublicGuestRoute
+  ApiPublicGuestSessionRoute: typeof ApiPublicGuestSessionRoute
   ApiPublicInboundRoute: typeof ApiPublicInboundRoute
   ApiPublicRegisterRoute: typeof ApiPublicRegisterRoute
+  ApiV1MailboxesRoute: typeof ApiV1MailboxesRouteWithChildren
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -251,39 +315,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/admin': {
-      id: '/_authenticated/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AuthenticatedAdminRouteImport
-      parentRoute: typeof AuthenticatedRoute
+    '/api/healthz': {
+      id: '/api/healthz'
+      path: '/api/healthz'
+      fullPath: '/api/healthz'
+      preLoaderRoute: typeof ApiHealthzRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/all': {
-      id: '/_authenticated/all'
-      path: '/all'
-      fullPath: '/all'
-      preLoaderRoute: typeof AuthenticatedAllRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/compose': {
-      id: '/_authenticated/compose'
-      path: '/compose'
-      fullPath: '/compose'
-      preLoaderRoute: typeof AuthenticatedComposeRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/dm': {
-      id: '/_authenticated/dm'
-      path: '/dm'
-      fullPath: '/dm'
-      preLoaderRoute: typeof AuthenticatedDmRouteImport
+    '/_authenticated/settings': {
+      id: '/_authenticated/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/mailboxes': {
@@ -293,19 +343,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedMailboxesRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/_authenticated/settings': {
-      id: '/_authenticated/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof AuthenticatedSettingsRouteImport
+    '/_authenticated/dm': {
+      id: '/_authenticated/dm'
+      path: '/dm'
+      fullPath: '/dm'
+      preLoaderRoute: typeof AuthenticatedDmRouteImport
       parentRoute: typeof AuthenticatedRoute
     }
-    '/api/healthz': {
-      id: '/api/healthz'
-      path: '/api/healthz'
-      fullPath: '/api/healthz'
-      preLoaderRoute: typeof ApiHealthzRouteImport
-      parentRoute: typeof rootRouteImport
+    '/_authenticated/compose': {
+      id: '/_authenticated/compose'
+      path: '/compose'
+      fullPath: '/compose'
+      preLoaderRoute: typeof AuthenticatedComposeRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/api-access': {
+      id: '/_authenticated/api-access'
+      path: '/api-access'
+      fullPath: '/api-access'
+      preLoaderRoute: typeof AuthenticatedApiAccessRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/all': {
+      id: '/_authenticated/all'
+      path: '/all'
+      fullPath: '/all'
+      preLoaderRoute: typeof AuthenticatedAllRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/admin': {
+      id: '/_authenticated/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthenticatedAdminRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
     '/_authenticated/dm/': {
       id: '/_authenticated/dm/'
@@ -314,32 +385,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDmIndexRouteImport
       parentRoute: typeof AuthenticatedDmRoute
     }
-    '/_authenticated/dm/$id': {
-      id: '/_authenticated/dm/$id'
-      path: '/$id'
-      fullPath: '/dm/$id'
-      preLoaderRoute: typeof AuthenticatedDmIdRouteImport
-      parentRoute: typeof AuthenticatedDmRoute
+    '/api/v1/mailboxes': {
+      id: '/api/v1/mailboxes'
+      path: '/api/v1/mailboxes'
+      fullPath: '/api/v1/mailboxes'
+      preLoaderRoute: typeof ApiV1MailboxesRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/m/$id': {
-      id: '/_authenticated/m/$id'
-      path: '/m/$id'
-      fullPath: '/m/$id'
-      preLoaderRoute: typeof AuthenticatedMIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/_authenticated/msg/$id': {
-      id: '/_authenticated/msg/$id'
-      path: '/msg/$id'
-      fullPath: '/msg/$id'
-      preLoaderRoute: typeof AuthenticatedMsgIdRouteImport
-      parentRoute: typeof AuthenticatedRoute
-    }
-    '/api/internal/outbound-health': {
-      id: '/api/internal/outbound-health'
-      path: '/api/internal/outbound-health'
-      fullPath: '/api/internal/outbound-health'
-      preLoaderRoute: typeof ApiInternalOutboundHealthRouteImport
+    '/api/public/register': {
+      id: '/api/public/register'
+      path: '/api/public/register'
+      fullPath: '/api/public/register'
+      preLoaderRoute: typeof ApiPublicRegisterRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/inbound': {
@@ -349,12 +406,54 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicInboundRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/register': {
-      id: '/api/public/register'
-      path: '/api/public/register'
-      fullPath: '/api/public/register'
-      preLoaderRoute: typeof ApiPublicRegisterRouteImport
+    '/api/public/guest-session': {
+      id: '/api/public/guest-session'
+      path: '/api/public/guest-session'
+      fullPath: '/api/public/guest-session'
+      preLoaderRoute: typeof ApiPublicGuestSessionRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/api/public/guest': {
+      id: '/api/public/guest'
+      path: '/api/public/guest'
+      fullPath: '/api/public/guest'
+      preLoaderRoute: typeof ApiPublicGuestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/internal/outbound-health': {
+      id: '/api/internal/outbound-health'
+      path: '/api/internal/outbound-health'
+      fullPath: '/api/internal/outbound-health'
+      preLoaderRoute: typeof ApiInternalOutboundHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/msg/$id': {
+      id: '/_authenticated/msg/$id'
+      path: '/msg/$id'
+      fullPath: '/msg/$id'
+      preLoaderRoute: typeof AuthenticatedMsgIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/m/$id': {
+      id: '/_authenticated/m/$id'
+      path: '/m/$id'
+      fullPath: '/m/$id'
+      preLoaderRoute: typeof AuthenticatedMIdRouteImport
+      parentRoute: typeof AuthenticatedRoute
+    }
+    '/_authenticated/dm/$id': {
+      id: '/_authenticated/dm/$id'
+      path: '/$id'
+      fullPath: '/dm/$id'
+      preLoaderRoute: typeof AuthenticatedDmIdRouteImport
+      parentRoute: typeof AuthenticatedDmRoute
+    }
+    '/api/v1/mailboxes/$id/messages': {
+      id: '/api/v1/mailboxes/$id/messages'
+      path: '/$id/messages'
+      fullPath: '/api/v1/mailboxes/$id/messages'
+      preLoaderRoute: typeof ApiV1MailboxesIdMessagesRouteImport
+      parentRoute: typeof ApiV1MailboxesRoute
     }
   }
 }
@@ -376,6 +475,7 @@ const AuthenticatedDmRouteWithChildren = AuthenticatedDmRoute._addFileChildren(
 interface AuthenticatedRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedAllRoute: typeof AuthenticatedAllRoute
+  AuthenticatedApiAccessRoute: typeof AuthenticatedApiAccessRoute
   AuthenticatedComposeRoute: typeof AuthenticatedComposeRoute
   AuthenticatedDmRoute: typeof AuthenticatedDmRouteWithChildren
   AuthenticatedMailboxesRoute: typeof AuthenticatedMailboxesRoute
@@ -387,6 +487,7 @@ interface AuthenticatedRouteChildren {
 const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedAllRoute: AuthenticatedAllRoute,
+  AuthenticatedApiAccessRoute: AuthenticatedApiAccessRoute,
   AuthenticatedComposeRoute: AuthenticatedComposeRoute,
   AuthenticatedDmRoute: AuthenticatedDmRouteWithChildren,
   AuthenticatedMailboxesRoute: AuthenticatedMailboxesRoute,
@@ -399,14 +500,29 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
   AuthenticatedRouteChildren,
 )
 
+interface ApiV1MailboxesRouteChildren {
+  ApiV1MailboxesIdMessagesRoute: typeof ApiV1MailboxesIdMessagesRoute
+}
+
+const ApiV1MailboxesRouteChildren: ApiV1MailboxesRouteChildren = {
+  ApiV1MailboxesIdMessagesRoute: ApiV1MailboxesIdMessagesRoute,
+}
+
+const ApiV1MailboxesRouteWithChildren = ApiV1MailboxesRoute._addFileChildren(
+  ApiV1MailboxesRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   AuthRoute: AuthRoute,
   ApiHealthzRoute: ApiHealthzRoute,
   ApiInternalOutboundHealthRoute: ApiInternalOutboundHealthRoute,
+  ApiPublicGuestRoute: ApiPublicGuestRoute,
+  ApiPublicGuestSessionRoute: ApiPublicGuestSessionRoute,
   ApiPublicInboundRoute: ApiPublicInboundRoute,
   ApiPublicRegisterRoute: ApiPublicRegisterRoute,
+  ApiV1MailboxesRoute: ApiV1MailboxesRouteWithChildren,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

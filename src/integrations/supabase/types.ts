@@ -398,31 +398,111 @@ export type Database = {
           },
         ];
       };
+      api_keys: {
+        Row: {
+          created_at: string;
+          id: string;
+          key_hash: string;
+          key_prefix: string;
+          last_used_at: string | null;
+          name: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          key_hash: string;
+          key_prefix: string;
+          last_used_at?: string | null;
+          name: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          key_hash?: string;
+          key_prefix?: string;
+          last_used_at?: string | null;
+          name?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
+      api_mailboxes: {
+        Row: { created_at: string; mailbox_id: string; user_id: string };
+        Insert: { created_at?: string; mailbox_id: string; user_id: string };
+        Update: { created_at?: string; mailbox_id?: string; user_id?: string };
+        Relationships: [
+          {
+            foreignKeyName: "api_mailboxes_mailbox_id_fkey";
+            columns: ["mailbox_id"];
+            isOneToOne: true;
+            referencedRelation: "mailboxes";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      guest_sessions: {
+        Row: {
+          cleanup_secret_hash: string;
+          delete_after: string | null;
+          expires_at: string;
+          last_seen_at: string;
+          user_id: string;
+        };
+        Insert: {
+          cleanup_secret_hash: string;
+          delete_after?: string | null;
+          expires_at: string;
+          last_seen_at?: string;
+          user_id: string;
+        };
+        Update: {
+          cleanup_secret_hash?: string;
+          delete_after?: string | null;
+          expires_at?: string;
+          last_seen_at?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       profiles: {
         Row: {
+          account_kind: string;
+          api_access: boolean;
           created_at: string;
           density: string;
           display_name: string | null;
           dm_privacy: string;
+          guest_expires_at: string | null;
           mailbox_limit: number;
+          suspended_until: string | null;
           user_id: string;
           username: string;
         };
         Insert: {
+          account_kind?: string;
+          api_access?: boolean;
           created_at?: string;
           density?: string;
           display_name?: string | null;
           dm_privacy?: string;
+          guest_expires_at?: string | null;
           mailbox_limit?: number;
+          suspended_until?: string | null;
           user_id: string;
           username: string;
         };
         Update: {
+          account_kind?: string;
+          api_access?: boolean;
           created_at?: string;
           density?: string;
           display_name?: string | null;
           dm_privacy?: string;
+          guest_expires_at?: string | null;
           mailbox_limit?: number;
+          suspended_until?: string | null;
           user_id?: string;
           username?: string;
         };

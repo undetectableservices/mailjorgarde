@@ -14,9 +14,17 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Progress } from "@/components/ui/progress";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { PageHeader } from "@/components/page-header";
 import { toast } from "sonner";
-import { AtSign, Plus, Trash2 } from "lucide-react";
+import {
+  AtSign,
+  CalendarClock,
+  Clock3,
+  Infinity as InfinityIcon,
+  Plus,
+  Trash2,
+} from "lucide-react";
 
 function errorMessage(error: unknown, fallback: string): string {
   if (
@@ -54,6 +62,21 @@ const TTL_PRESETS: Array<{ label: string; minutes: number | null }> = [
   { label: "7 jours", minutes: 60 * 24 * 7 },
   { label: "30 jours", minutes: 60 * 24 * 30 },
 ];
+const EXTENSION_PRESETS = [
+  { label: "1 heure", shortLabel: "+ 1 h", minutes: 60 },
+  { label: "1 jour", shortLabel: "+ 1 jour", minutes: 60 * 24 },
+  { label: "7 jours", shortLabel: "+ 7 jours", minutes: 60 * 24 * 7 },
+  { label: "30 jours", shortLabel: "+ 30 jours", minutes: 60 * 24 * 30 },
+] as const;
+
+function remainingLifetime(expiresAt: string | null): string {
+  if (!expiresAt) return "Expiration inconnue";
+  const minutes = Math.max(0, Math.ceil((Date.parse(expiresAt) - Date.now()) / 60_000));
+  if (minutes < 60) return `${minutes} min restantes`;
+  const hours = Math.ceil(minutes / 60);
+  if (hours < 48) return `${hours} h restantes`;
+  return `${Math.ceil(hours / 24)} jours restants`;
+}
 
 export const Route = createFileRoute("/_authenticated/mailboxes")({
   head: () => ({
@@ -84,6 +107,19 @@ function Mailboxes() {
       return data;
     },
     enabled: !!user,
+  });
+  const { data: isAdmin } = useQuery({
+    queryKey: ["is-admin", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user!.id)
+        .eq("role", "admin")
+        .maybeSingle();
+      return !!data;
+    },
   });
   const { data: domains } = useQuery({
     queryKey: ["domains"],
@@ -123,7 +159,11 @@ function Mailboxes() {
         throw new Error("Adresse invalide (1 à 64 caractères : a-z, 0-9, . _ -)");
       }
       const head = lp.split(/[._-]/)[0];
-      if (RESERVED.has(lp) || RESERVED.has(head)) throw new Error("Ce nom est réservé");
+      if (!isAdmin && (RESERVED.has(lp) || RESERVED.has(head))) {
+        throw new Error("Ce nom est réservé aux administrateurs");
+      }
+      if (profile?.account_kind === "guest")
+        throw new Error("Les adresses invitées sont gérées automatiquement");
       if (!domainId) throw new Error("Choisissez un domaine");
       if (used >= limit) throw new Error(`Quota atteint (${limit} adresses)`);
       const { error } = await supabase.rpc("create_mailbox", {
@@ -158,15 +198,32 @@ function Mailboxes() {
 
   const extend = useMutation({
     mutationFn: async ({ id, minutes }: { id: string; minutes: number | null }) => {
-      const { error } = await supabase.rpc("set_mailbox_lifetime", {
+      const { data, error } = await supabase.rpc("set_mailbox_lifetime", {
         p_mailbox_id: id,
         p_ttl_minutes: minutes,
       });
       if (error) throw error;
+      return data;
     },
-    onSuccess: () => {
-      toast.success("Durée mise à jour");
-      refetch();
+    onSuccess: (updated, variables) => {
+      // Apply the authoritative row immediately. This also removes the
+      // ephemeral badge the instant the address becomes permanent.
+      if (updated) {
+        qc.setQueryData(["mailboxes-full", user?.id], (current: typeof mailboxes) =>
+          current?.map((mailbox) =>
+            mailbox.id === updated.id
+              ? {
+                  ...mailbox,
+                  is_temp: updated.is_temp,
+                  expires_at: updated.expires_at,
+                }
+              : mailbox,
+          ),
+        );
+      }
+      toast.success(variables.minutes === null ? "Adresse rendue permanente" : "Durée prolongée");
+      void qc.invalidateQueries({ queryKey: ["mailboxes"] });
+      void refetch();
     },
     onError: (error) => toast.error(errorMessage(error, "Impossible de modifier l’adresse")),
   });
@@ -198,80 +255,82 @@ function Mailboxes() {
         />
       </div>
 
-      <div className="noir-panel mb-8 space-y-4 rounded-3xl p-5 sm:p-7">
-        <div className="flex items-center gap-3">
-          <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-brand-secondary ring-1 ring-primary/15">
-            <Plus className="size-5" />
-          </div>
-          <div>
-            <h2 className="font-display text-xl">Créer une adresse</h2>
-            <p className="text-xs text-muted-foreground">Choisissez un domaine et une durée.</p>
-          </div>
-        </div>
-        {!domains || domains.length === 0 ? (
-          <div className="text-sm text-muted-foreground">
-            Aucun domaine n’est encore configuré. Un administrateur doit d’abord en ajouter un.
-          </div>
-        ) : (
-          <>
-            <div className="grid md:grid-cols-[1fr_auto_1fr] gap-2 items-center">
-              <Input
-                placeholder="nom-de-l’adresse"
-                value={local}
-                onChange={(e) => setLocal(e.target.value)}
-              />
-              <span className="text-muted-foreground">@</span>
-              <Select value={domainId} onValueChange={setDomainId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Choisir un domaine" />
-                </SelectTrigger>
-                <SelectContent>
-                  {domains.map((d) => {
-                    const e = domainExpiry(d.expires_at);
-                    return (
-                      <SelectItem key={d.id} value={d.id}>
-                        <span className="flex items-center gap-2">
-                          {d.name}
-                          {e && <span className={`text-[10px] ${e.tone}`}>• {e.text}</span>}
-                        </span>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
+      {profile?.account_kind !== "guest" && (
+        <div className="noir-panel mb-8 space-y-4 rounded-3xl p-5 sm:p-7">
+          <div className="flex items-center gap-3">
+            <div className="grid size-10 place-items-center rounded-xl bg-primary/10 text-brand-secondary ring-1 ring-primary/15">
+              <Plus className="size-5" />
             </div>
-            <div className="flex flex-wrap gap-4 items-center">
-              <label className="flex items-center gap-2 text-sm">
-                <Switch checked={isTemp} onCheckedChange={setIsTemp} /> Éphémère
-              </label>
-              {isTemp && (
-                <Select value={String(ttl)} onValueChange={(v) => setTtl(Number(v))}>
-                  <SelectTrigger className="w-40">
-                    <SelectValue />
+            <div>
+              <h2 className="font-display text-xl">Créer une adresse</h2>
+              <p className="text-xs text-muted-foreground">Choisissez un domaine et une durée.</p>
+            </div>
+          </div>
+          {!domains || domains.length === 0 ? (
+            <div className="text-sm text-muted-foreground">
+              Aucun domaine n’est encore configuré. Un administrateur doit d’abord en ajouter un.
+            </div>
+          ) : (
+            <>
+              <div className="grid md:grid-cols-[1fr_auto_1fr] gap-2 items-center">
+                <Input
+                  placeholder="nom-de-l’adresse"
+                  value={local}
+                  onChange={(e) => setLocal(e.target.value)}
+                />
+                <span className="text-muted-foreground">@</span>
+                <Select value={domainId} onValueChange={setDomainId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Choisir un domaine" />
                   </SelectTrigger>
                   <SelectContent>
-                    {TTL_PRESETS.map((p) => (
-                      <SelectItem key={p.label} value={String(p.minutes)}>
-                        {p.label}
-                      </SelectItem>
-                    ))}
+                    {domains.map((d) => {
+                      const e = domainExpiry(d.expires_at);
+                      return (
+                        <SelectItem key={d.id} value={d.id}>
+                          <span className="flex items-center gap-2">
+                            {d.name}
+                            {e && <span className={`text-[10px] ${e.tone}`}>• {e.text}</span>}
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
-              )}
-              <Button
-                onClick={() => create.mutate()}
-                disabled={create.isPending}
-                className="bg-gold ml-auto text-white"
-              >
-                Créer
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Certains noms techniques sont réservés et ne peuvent pas être utilisés.
-            </p>
-          </>
-        )}
-      </div>
+              </div>
+              <div className="flex flex-wrap gap-4 items-center">
+                <label className="flex items-center gap-2 text-sm">
+                  <Switch checked={isTemp} onCheckedChange={setIsTemp} /> Éphémère
+                </label>
+                {isTemp && (
+                  <Select value={String(ttl)} onValueChange={(v) => setTtl(Number(v))}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TTL_PRESETS.map((p) => (
+                        <SelectItem key={p.label} value={String(p.minutes)}>
+                          {p.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                <Button
+                  onClick={() => create.mutate()}
+                  disabled={create.isPending}
+                  className="bg-gold ml-auto text-white"
+                >
+                  Créer
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Certains noms techniques sont réservés et ne peuvent pas être utilisés.
+              </p>
+            </>
+          )}
+        </div>
+      )}
 
       <div className="noir-panel mail-list divide-y divide-border">
         {(mailboxes ?? []).map((mb) => (
@@ -292,32 +351,26 @@ function Mailboxes() {
                   ) : null;
                 })()}
               </div>
-              <div className="text-xs text-muted-foreground">
-                {mb.is_temp
-                  ? `Éphémère — expire ${mb.expires_at ? new Date(mb.expires_at).toLocaleString("fr-FR") : "?"}`
-                  : "Permanente"}
-              </div>
+              {mb.is_temp ? (
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                  <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-2 py-0.5 font-semibold text-amber-200">
+                    Éphémère
+                  </span>
+                  <span className="text-muted-foreground">{remainingLifetime(mb.expires_at)}</span>
+                </div>
+              ) : (
+                <div className="mt-1 text-xs text-muted-foreground">Adresse permanente</div>
+              )}
             </div>
-            {mb.is_temp && (
-              <Select
-                onValueChange={(v) =>
-                  extend.mutate({ id: mb.id, minutes: v === "perm" ? null : Number(v) })
-                }
-              >
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Prolonger" />
-                </SelectTrigger>
-                <SelectContent>
-                  {TTL_PRESETS.map((p) => (
-                    <SelectItem key={p.label} value={String(p.minutes)}>
-                      +{p.label}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="perm">Rendre permanente</SelectItem>
-                </SelectContent>
-              </Select>
+            {mb.is_temp && profile?.account_kind !== "guest" && (
+              <MailboxLifetimeControl
+                address={`${mb.local_part}@${mb.domain?.name}`}
+                expiresAt={mb.expires_at}
+                pending={extend.isPending}
+                onChange={(minutes) => extend.mutate({ id: mb.id, minutes })}
+              />
             )}
-            {!REQUIRED_DOMAIN_ALIASES.has(mb.local_part) && (
+            {profile?.account_kind !== "guest" && !REQUIRED_DOMAIN_ALIASES.has(mb.local_part) && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -349,5 +402,90 @@ function Mailboxes() {
         )}
       </div>
     </div>
+  );
+}
+
+function MailboxLifetimeControl({
+  address,
+  expiresAt,
+  pending,
+  onChange,
+}: {
+  address: string;
+  expiresAt: string | null;
+  pending: boolean;
+  onChange: (minutes: number | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+
+  const choose = (minutes: number | null) => {
+    setOpen(false);
+    onChange(minutes);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={pending}
+          className="rounded-xl border-amber-300/20 bg-amber-300/[0.06] text-amber-100 hover:bg-amber-300/10 hover:text-amber-50"
+        >
+          <Clock3 className="size-4" />
+          {pending ? "Mise à jour…" : "Gérer la durée"}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[min(22rem,calc(100vw-2rem))] rounded-2xl p-0">
+        <div className="border-b border-border p-4">
+          <div className="flex items-start gap-3">
+            <div className="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-300/10 text-amber-200 ring-1 ring-amber-300/15">
+              <CalendarClock className="size-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="font-semibold">Durée de l’adresse</div>
+              <div className="mt-0.5 truncate text-xs text-muted-foreground" title={address}>
+                {address}
+              </div>
+            </div>
+          </div>
+          <div className="mt-4 rounded-xl border border-amber-300/15 bg-amber-300/[0.05] p-3">
+            <div className="text-sm font-semibold text-amber-100">
+              {remainingLifetime(expiresAt)}
+            </div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              Expiration le {expiresAt ? new Date(expiresAt).toLocaleString("fr-FR") : "—"}
+            </div>
+          </div>
+        </div>
+        <div className="p-4">
+          <div className="mb-2 text-[0.68rem] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+            Ajouter du temps
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            {EXTENSION_PRESETS.map((preset) => (
+              <Button
+                key={preset.minutes}
+                type="button"
+                variant="outline"
+                className="justify-start rounded-xl"
+                title={`Prolonger de ${preset.label}`}
+                onClick={() => choose(preset.minutes)}
+              >
+                {preset.shortLabel}
+              </Button>
+            ))}
+          </div>
+          <Button
+            type="button"
+            className="mt-3 w-full rounded-xl bg-gold text-white"
+            onClick={() => choose(null)}
+          >
+            <InfinityIcon className="size-4" /> Rendre permanente
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

@@ -1,4 +1,4 @@
-import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { ArrowRight, KeyRound, Mail, MessageCircleMore, ShieldCheck, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { z } from "zod";
@@ -38,6 +38,7 @@ function usernameToEmail(username: string) {
 
 function AuthPage() {
   const { next } = useSearch({ from: "/auth" });
+  const navigate = useNavigate();
   const [mode, setMode] = useState<"signin" | "register">("signin");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -46,6 +47,36 @@ function AuthPage() {
   const [mailPassword, setMailPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const guestSignIn = async () => {
+    setBusy(true);
+    try {
+      const response = await fetch("/api/public/guest", { method: "POST" });
+      const result = (await response.json().catch(() => null)) as {
+        username?: unknown;
+        password?: unknown;
+        cleanup_secret?: unknown;
+      } | null;
+      if (
+        !response.ok ||
+        typeof result?.username !== "string" ||
+        typeof result.password !== "string" ||
+        typeof result.cleanup_secret !== "string"
+      ) {
+        throw new Error(
+          response.status === 429
+            ? "Trop de comptes invités créés. Réessayez plus tard."
+            : "Le mode invité est indisponible pour le moment.",
+        );
+      }
+      sessionStorage.setItem("jorgardemail.guest.cleanup", result.cleanup_secret);
+      await completeSignIn(result.username, result.password);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Connexion invitée impossible");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const unsafeNextCharacter = next
     ? [...next].some((character) => {
@@ -64,12 +95,10 @@ function AuthPage() {
     });
     if (error || !data.session) throw new Error("Identifiant ou mot de passe incorrect");
 
-    // The auth provider lives inside the protected route tree. A client-side
-    // transition can therefore mount a fresh provider before it observes the
-    // session written by signInWithPassword, leaving the user on this page
-    // until a second submit. Reloading the protected route initializes auth
-    // from the now-persisted session and makes the first submit deterministic.
-    window.location.replace(safeNext);
+    // AuthProvider lives above both the auth and protected route trees, so it
+    // receives SIGNED_IN before this transition and the guard cannot redirect
+    // the successful first attempt back to this form.
+    await navigate({ to: safeNext, replace: true });
   };
 
   const submit = async (event: React.FormEvent) => {
@@ -287,6 +316,16 @@ function AuthPage() {
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              className="mt-3 w-full border-brand-secondary/20 bg-brand-secondary/[0.05]"
+              onClick={() => void guestSignIn()}
+            >
+              Essayer en invité · 3 adresses pendant 1 heure
+            </Button>
 
             {mode === "signin" ? (
               <form onSubmit={submit} className="mt-6 space-y-4">

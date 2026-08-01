@@ -10,7 +10,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/page-header";
 import { toast } from "sonner";
-import { Trash2, Megaphone, ShieldCheck } from "lucide-react";
+import {
+  Ban,
+  Clock3,
+  KeyRound,
+  Trash2,
+  Megaphone,
+  ShieldCheck,
+  SlidersHorizontal,
+  UserCheck,
+} from "lucide-react";
 import {
   broadcastToAllUsers,
   getAdminUserStats,
@@ -18,6 +27,15 @@ import {
 } from "@/lib/admin-broadcast.functions";
 import { SetupWizard } from "@/components/setup-wizard";
 import { AdminUserProvisioning, ResetUserPassword } from "@/components/admin-user-provisioning";
+import { deleteUserMailbox, setLocalUserBan, setUserApiAccess } from "@/lib/admin-users.functions";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 
 function errorMessage(error: unknown, fallback: string): string {
   if (
@@ -161,8 +179,13 @@ function fmtBytes(n: number) {
 }
 
 function Users() {
+  const { user } = useAuth();
   const loadStats = useServerFn(getAdminUserStats);
   const updateLimit = useServerFn(setAdminMailboxLimit);
+  const updateBan = useServerFn(setLocalUserBan);
+  const updateApiAccess = useServerFn(setUserApiAccess);
+  const removeMailbox = useServerFn(deleteUserMailbox);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const { data, refetch } = useQuery({
     queryKey: ["admin-users-stats"],
     queryFn: () => loadStats(),
@@ -179,6 +202,41 @@ function Users() {
     onError: (error) => toast.error(errorMessage(error, "Impossible de modifier la limite")),
   });
 
+  const setBan = useMutation({
+    mutationFn: async ({
+      userId,
+      duration,
+    }: {
+      userId: string;
+      duration: "1h" | "24h" | "7d" | "permanent" | "none";
+    }) => updateBan({ data: { userId, duration } }),
+    onSuccess: (result) => {
+      toast.success(result.banned ? "Utilisateur banni" : "Accès rétabli");
+      void refetch();
+    },
+    onError: (error) =>
+      toast.error(errorMessage(error, "Impossible de modifier l’accès de cet utilisateur")),
+  });
+
+  const setApiAccess = useMutation({
+    mutationFn: ({ userId, enabled }: { userId: string; enabled: boolean }) =>
+      updateApiAccess({ data: { userId, enabled } }),
+    onSuccess: (result) => {
+      toast.success(result.enabled ? "Accès API accordé" : "Accès API retiré et clés révoquées");
+      void refetch();
+    },
+    onError: (error) => toast.error(errorMessage(error, "Impossible de modifier l’accès API")),
+  });
+
+  const deleteMailbox = useMutation({
+    mutationFn: (mailboxId: string) => removeMailbox({ data: { mailboxId } }),
+    onSuccess: (result) => {
+      toast.success(`${result.address} supprimée`);
+      void refetch();
+    },
+    onError: (error) => toast.error(errorMessage(error, "Impossible de supprimer cette adresse")),
+  });
+
   const users = data?.users ?? [];
 
   return (
@@ -193,7 +251,23 @@ function Users() {
         {users.map((u) => (
           <div key={u.user_id} className="mail-row flex flex-wrap items-center gap-4 p-4">
             <div className="flex-1 min-w-[220px]">
-              <div className="font-medium">@{u.username}</div>
+              <button
+                type="button"
+                className="flex items-center gap-2 font-medium text-left hover:text-gold"
+                onClick={() => setSelectedUserId(u.user_id)}
+              >
+                <span>@{u.username}</span>
+                {u.is_banned && (
+                  <span className="rounded-full border border-red-400/30 bg-red-400/10 px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider text-red-300">
+                    Banni
+                  </span>
+                )}
+                {u.user_id === user?.id && (
+                  <span className="rounded-full border border-primary/20 bg-primary/10 px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-wider text-gold">
+                    Vous
+                  </span>
+                )}
+              </button>
               <div
                 className="text-xs text-muted-foreground truncate max-w-md"
                 title={u.addresses.join(", ")}
@@ -221,13 +295,206 @@ function Users() {
               }}
             />
             <ResetUserPassword userId={u.user_id} username={u.username} />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setSelectedUserId(u.user_id)}
+            >
+              <SlidersHorizontal className="size-4" /> Gérer
+            </Button>
           </div>
         ))}
         {users.length === 0 && (
           <div className="p-12 text-center text-muted-foreground">Aucun utilisateur.</div>
         )}
       </div>
+      <UserControlDialog
+        user={users.find((entry) => entry.user_id === selectedUserId) ?? null}
+        currentUserId={user?.id}
+        open={!!selectedUserId}
+        onOpenChange={(open) => !open && setSelectedUserId(null)}
+        onBan={(userId, duration) => setBan.mutate({ userId, duration })}
+        onApiAccess={(userId, enabled) => setApiAccess.mutate({ userId, enabled })}
+        onDeleteMailbox={(mailboxId) => deleteMailbox.mutate(mailboxId)}
+        pending={setBan.isPending || setApiAccess.isPending || deleteMailbox.isPending}
+      />
     </div>
+  );
+}
+
+type UserControlEntry = {
+  user_id: string;
+  username: string;
+  display_name: string | null;
+  is_banned: boolean;
+  banned_until: string | null;
+  api_access: boolean;
+  account_kind: string;
+  mailboxes: Array<{
+    id: string;
+    local_part: string;
+    is_temp: boolean;
+    expires_at: string | null;
+    domain: { name: string } | null;
+  }>;
+};
+
+function UserControlDialog({
+  user,
+  currentUserId,
+  open,
+  onOpenChange,
+  onBan,
+  onApiAccess,
+  onDeleteMailbox,
+  pending,
+}: {
+  user: UserControlEntry | null;
+  currentUserId?: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onBan: (userId: string, duration: "1h" | "24h" | "7d" | "permanent" | "none") => void;
+  onApiAccess: (userId: string, enabled: boolean) => void;
+  onDeleteMailbox: (mailboxId: string) => void;
+  pending: boolean;
+}) {
+  if (!user) return null;
+  const self = user.user_id === currentUserId;
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90dvh] max-w-2xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="font-display text-2xl">Gérer @{user.username}</DialogTitle>
+          <DialogDescription>
+            {user.display_name || "Utilisateur JorgardeMail"} ·{" "}
+            {user.account_kind === "guest" ? "compte invité" : "compte membre"}
+          </DialogDescription>
+        </DialogHeader>
+
+        <section className="rounded-2xl border border-border bg-black/15 p-4">
+          <div className="mb-3 flex items-center gap-2 font-semibold">
+            <Clock3 className="size-4 text-brand-secondary" /> Accès au compte
+          </div>
+          {self ? (
+            <p className="text-sm text-muted-foreground">
+              Votre propre compte ne peut pas être banni.
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {user.is_banned && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={pending}
+                  onClick={() => onBan(user.user_id, "none")}
+                >
+                  <UserCheck className="size-4" /> Débannir
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pending}
+                onClick={() => onBan(user.user_id, "1h")}
+              >
+                Bannir 1 h
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pending}
+                onClick={() => onBan(user.user_id, "24h")}
+              >
+                Bannir 24 h
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={pending}
+                onClick={() => onBan(user.user_id, "7d")}
+              >
+                Bannir 7 jours
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-red-400/30 text-red-300"
+                disabled={pending}
+                onClick={() =>
+                  window.confirm(`Bannir définitivement @${user.username} ?`) &&
+                  onBan(user.user_id, "permanent")
+                }
+              >
+                <Ban className="size-4" /> Permanent
+              </Button>
+            </div>
+          )}
+          {user.is_banned && user.banned_until && (
+            <p className="mt-3 text-xs text-red-300">
+              Banni jusqu’au {new Date(user.banned_until).toLocaleString("fr-FR")}
+            </p>
+          )}
+        </section>
+
+        <section className="rounded-2xl border border-border bg-black/15 p-4">
+          <div className="flex items-center gap-3">
+            <KeyRound className="size-4 text-brand-secondary" />
+            <div className="flex-1">
+              <div className="font-semibold">API développeur</div>
+              <div className="text-xs text-muted-foreground">
+                Autorise uniquement création temporaire et lecture.
+              </div>
+            </div>
+            <Switch
+              checked={user.api_access}
+              disabled={pending || user.account_kind === "guest"}
+              onCheckedChange={(enabled) => onApiAccess(user.user_id, enabled)}
+            />
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-border bg-black/15 p-4">
+          <div className="mb-3 font-semibold">Adresses ({user.mailboxes.length})</div>
+          <div className="space-y-2">
+            {user.mailboxes.map((mailbox) => {
+              const protectedAlias = ["postmaster", "abuse"].includes(mailbox.local_part);
+              const address = `${mailbox.local_part}@${mailbox.domain?.name ?? ""}`;
+              return (
+                <div
+                  key={mailbox.id}
+                  className="flex items-center gap-3 rounded-xl border border-border bg-black/10 p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-mono text-sm">{address}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {mailbox.is_temp
+                        ? `Temporaire · ${mailbox.expires_at ? new Date(mailbox.expires_at).toLocaleString("fr-FR") : "expiration inconnue"}`
+                        : "Permanente"}
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    disabled={pending || protectedAlias}
+                    title={protectedAlias ? "Adresse obligatoire" : `Supprimer ${address}`}
+                    onClick={() =>
+                      window.confirm(`Supprimer ${address} et tous ses messages ?`) &&
+                      onDeleteMailbox(mailbox.id)
+                    }
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                </div>
+              );
+            })}
+            {user.mailboxes.length === 0 && (
+              <p className="text-sm text-muted-foreground">Aucune adresse.</p>
+            )}
+          </div>
+        </section>
+      </DialogContent>
+    </Dialog>
   );
 }
 

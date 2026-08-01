@@ -13,6 +13,7 @@ import { BrandMark } from "@/components/brand-mark";
 import { Toaster } from "@/components/ui/sonner";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { AuthProvider } from "@/lib/auth";
 
 function NotFoundComponent() {
   return (
@@ -129,8 +130,10 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
-      <Toaster theme="dark" position="bottom-right" richColors closeButton />
+      <AuthProvider>
+        <Outlet />
+        <Toaster theme="dark" position="bottom-right" richColors closeButton />
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

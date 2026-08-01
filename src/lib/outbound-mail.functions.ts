@@ -68,6 +68,14 @@ export const sendOutboundEmail = createServerFn({ method: "POST" })
   .validator((data: unknown) => outboundMessageSchema.parse(data))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: senderProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("account_kind")
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (senderProfile?.account_kind === "guest") {
+      throw new Error("Les comptes invités peuvent uniquement recevoir des e-mails.");
+    }
     const { deliverOutboundMessage, getOutboundRelayStatus, publicOutboundError } =
       await import("./outbound-mail.server");
     const relayStatus = await getOutboundRelayStatus();

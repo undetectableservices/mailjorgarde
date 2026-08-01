@@ -32,7 +32,6 @@ export const broadcastToAllUsers = createServerFn({ method: "POST" })
     await assertAdmin({ supabase, userId });
 
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
     // Pick one mailbox per user (earliest created) so the broadcast lands
     // in each user's unified inbox exactly once.
     const { data: boxes, error: boxErr } = await supabaseAdmin
@@ -81,11 +80,56 @@ export const getAdminUserStats = createServerFn({ method: "POST" })
     const { data, error } = await context.supabase.rpc("admin_user_stats", {});
     if (error) throw new Error(error.message);
 
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const [{ data: profiles }, { data: mailboxes, error: mailboxError }] = await Promise.all([
+      supabaseAdmin
+        .from("profiles")
+        .select("user_id, api_access, account_kind, guest_expires_at, suspended_until"),
+      supabaseAdmin
+        .from("mailboxes")
+        .select("id, user_id, local_part, is_temp, expires_at, domain:domains(name)"),
+    ]);
+    if (mailboxError) throw new Error(mailboxError.message);
+    const profileByUser = new Map((profiles ?? []).map((profile) => [profile.user_id, profile]));
+    const mailboxesByUser = new Map<string, NonNullable<typeof mailboxes>>();
+    for (const mailbox of mailboxes ?? []) {
+      const current = mailboxesByUser.get(mailbox.user_id) ?? [];
+      current.push(mailbox);
+      mailboxesByUser.set(mailbox.user_id, current);
+    }
+
+    const authUsers = new Map<string, string | null>();
+    const perPage = 100;
+    for (let page = 1; ; page += 1) {
+      const { data: authPage, error: authError } = await supabaseAdmin.auth.admin.listUsers({
+        page,
+        perPage,
+      });
+      if (authError) throw new Error(authError.message);
+      for (const authUser of authPage.users) {
+        authUsers.set(authUser.id, authUser.banned_until ?? null);
+      }
+      if (authPage.users.length < perPage) break;
+    }
+
+    const now = Date.now();
+
     const users = (data ?? []).map((row) => ({
       ...row,
       mailbox_count: Number(row.mailbox_count ?? 0),
       storage_bytes: Number(row.storage_bytes ?? 0),
       addresses: row.addresses ?? [],
+      mailboxes: mailboxesByUser.get(row.user_id) ?? [],
+      api_access: profileByUser.get(row.user_id)?.api_access ?? false,
+      account_kind: profileByUser.get(row.user_id)?.account_kind ?? "member",
+      guest_expires_at: profileByUser.get(row.user_id)?.guest_expires_at ?? null,
+      banned_until:
+        profileByUser.get(row.user_id)?.suspended_until ?? authUsers.get(row.user_id) ?? null,
+      is_banned: (() => {
+        const bannedUntil =
+          profileByUser.get(row.user_id)?.suspended_until ?? authUsers.get(row.user_id);
+        return !!bannedUntil && Date.parse(bannedUntil) > now;
+      })(),
     }));
     return {
       users,

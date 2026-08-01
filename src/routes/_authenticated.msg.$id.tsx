@@ -389,7 +389,7 @@ function MessageDetail() {
           <div className="reader-paper">
             <iframe
               title="Contenu HTML de l’e-mail"
-              sandbox=""
+              sandbox="allow-popups allow-popups-to-escape-sandbox"
               referrerPolicy="no-referrer"
               srcDoc={createIsolatedEmailDocument(message.body_html, inlineImages)}
               className="reader-frame w-full border-0 bg-white"
