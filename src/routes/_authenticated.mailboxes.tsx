@@ -461,7 +461,7 @@ function MailboxLifetimeControl({
     Number(customValue) * (customUnit === "days" ? 1440 : customUnit === "hours" ? 60 : 1),
   );
   const validCustom =
-    Number.isFinite(customMinutes) && customMinutes >= 10 && customMinutes <= 43200;
+    Number.isFinite(customMinutes) && customMinutes >= 1 && customMinutes <= 43200;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -524,7 +524,7 @@ function MailboxLifetimeControl({
             <div className="grid grid-cols-[1fr_9rem] gap-2">
               <Input
                 type="number"
-                min={customUnit === "minutes" ? 10 : 1}
+                min={1}
                 max={customUnit === "days" ? 30 : customUnit === "hours" ? 720 : 43200}
                 step="1"
                 value={customValue}
@@ -558,7 +558,7 @@ function MailboxLifetimeControl({
               Définir exactement ce temps restant
             </Button>
             <p className="mt-2 text-[0.68rem] text-muted-foreground">
-              Minimum 10 minutes, maximum 30 jours.
+              Minimum 1 minute, maximum 30 jours.
             </p>
           </div>
           <Button

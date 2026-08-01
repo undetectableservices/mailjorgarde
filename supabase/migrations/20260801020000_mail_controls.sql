@@ -183,8 +183,8 @@ BEGIN
   IF caller IS NULL THEN
     RAISE EXCEPTION 'Authentication required' USING ERRCODE = '42501';
   END IF;
-  IF p_ttl_minutes NOT BETWEEN 10 AND 43200 THEN
-    RAISE EXCEPTION 'Remaining lifetime must be between 10 and 43200 minutes'
+  IF p_ttl_minutes NOT BETWEEN 1 AND 43200 THEN
+    RAISE EXCEPTION 'Remaining lifetime must be between 1 and 43200 minutes'
       USING ERRCODE = '22023';
   END IF;
 
