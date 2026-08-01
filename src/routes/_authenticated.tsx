@@ -61,6 +61,9 @@ function Guard() {
 function Shell() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const routeKey = useRouterState({
+    select: (state) => state.resolvedLocation?.pathname ?? state.location.pathname,
+  });
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const { data: profile, error: profileError } = useQuery({
@@ -211,7 +214,7 @@ function Shell() {
       )}
 
       <aside
-        className={`app-sidebar fixed inset-y-0 left-0 z-50 flex w-[284px] flex-col border-r border-sidebar-border p-3 transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] md:sticky md:top-0 md:z-auto md:h-screen md:w-auto md:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+        className={`app-sidebar fixed inset-y-0 left-0 z-50 flex w-[284px] flex-col border-r border-sidebar-border p-3 transition-transform duration-200 ease-out md:sticky md:top-0 md:z-auto md:h-screen md:w-auto md:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div className="px-2 pb-4 pt-2">
           <div className="flex items-center justify-between gap-3">
@@ -382,7 +385,9 @@ function Shell() {
           <BrandLockup compact />
         </div>
         <div className="route-stage">
-          <Outlet />
+          <div key={routeKey} className="route-stage-content">
+            <Outlet />
+          </div>
         </div>
       </main>
     </div>

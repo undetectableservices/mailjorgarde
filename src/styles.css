@@ -96,7 +96,7 @@
   html {
     min-width: 320px;
     background: var(--background);
-    scroll-behavior: smooth;
+    scroll-behavior: auto;
   }
 
   body {
@@ -143,12 +143,11 @@
   button,
   a {
     transition:
-      color 180ms ease,
-      background-color 180ms ease,
-      border-color 180ms ease,
-      opacity 180ms ease,
-      transform 260ms var(--ease-out-expo),
-      box-shadow 260ms var(--ease-out-expo);
+      color 120ms ease-out,
+      background-color 120ms ease-out,
+      border-color 120ms ease-out,
+      opacity 120ms ease-out,
+      box-shadow 160ms ease-out;
   }
 
   input,
@@ -292,9 +291,15 @@
   }
 
   .route-stage {
+    isolation: isolate;
+    position: relative;
     min-height: 100dvh;
     contain: layout paint;
-    view-transition-name: route-stage;
+  }
+
+  .route-stage-content {
+    min-height: inherit;
+    animation: jm-route-enter 135ms cubic-bezier(0.22, 0.72, 0.28, 1) both;
   }
 
   .app-page {
@@ -384,10 +389,10 @@
     color: var(--sidebar-foreground);
     font-size: 0.875rem;
     transition:
-      border-color 140ms ease,
-      background-color 140ms ease,
-      color 140ms ease,
-      transform 140ms ease;
+      border-color 110ms ease-out,
+      background-color 110ms ease-out,
+      color 110ms ease-out,
+      box-shadow 140ms ease-out;
   }
 
   .nav-item::before {
@@ -399,14 +404,16 @@
     content: "";
     background: linear-gradient(var(--brand), var(--brand-secondary));
     box-shadow: 0 0 14px var(--brand-secondary);
-    transition: height 260ms var(--ease-out-expo);
+    opacity: 0;
+    transition:
+      height 140ms ease-out,
+      opacity 100ms ease-out;
   }
 
   .nav-item:hover {
     border-color: oklch(0.8 0.08 250 / 0.09);
     background: oklch(0.78 0.08 250 / 0.055);
     color: white;
-    transform: translateX(2px);
   }
 
   .nav-item-active {
@@ -420,6 +427,7 @@
 
   .nav-item-active::before {
     height: 52%;
+    opacity: 1;
   }
 
   .compose-cta {
@@ -703,14 +711,14 @@
   }
 }
 
-@keyframes jm-page-enter {
+@keyframes jm-route-enter {
   from {
-    opacity: 0;
-    transform: translate3d(0, 14px, 0) scale(0.995);
+    opacity: 0.82;
+    transform: translate3d(0, 5px, 0);
   }
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
+    transform: none;
   }
 }
 
@@ -835,28 +843,23 @@
   }
 }
 
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation: none;
-}
-
-::view-transition-old(route-stage) {
-  animation: jm-route-out 90ms ease-out both;
-}
-
-::view-transition-new(route-stage) {
-  animation: jm-route-in 160ms ease-out both;
-}
-
-@keyframes jm-route-out {
-  to {
-    opacity: 0.72;
+@supports (-moz-appearance: none) {
+  body {
+    text-rendering: auto;
   }
-}
 
-@keyframes jm-route-in {
-  from {
-    opacity: 0.72;
+  .noir-panel,
+  .app-sidebar,
+  .reader-toolbar,
+  .auth-card,
+  .auth-showcase,
+  .mail-action-bar {
+    backdrop-filter: none;
+  }
+
+  .app-main {
+    scrollbar-color: oklch(0.78 0.07 250 / 0.3) transparent;
+    scrollbar-width: thin;
   }
 }
 
