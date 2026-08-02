@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "id": "18fc6f0b-a4da-4f24-826a-b927e13f8918",
+  "name": "Exemple — service local",
+  "start_url": "http://localhost:8080/register",
+  "allowed_hosts": [
+    "localhost"
+  ],
+  "delete_mailbox_after_success": false,
+  "created_at": "2026-08-01T00:00:00+00:00",
+  "updated_at": "2026-08-01T00:00:00+00:00",
+  "actions": [
+    {
+      "type": "goto",
+      "url": "{{START_URL}}"
+    },
+    {
+      "type": "fill",
+      "selector": "input[name=email]",
+      "value": "{{EMAIL}}"
+    },
+    {
+      "type": "fill",
+      "selector": "input[name=username]",
+      "value": "{{USERNAME}}"
+    },
+    {
+      "type": "fill",
+      "selector": "input[name=password]",
+      "value": "{{PASSWORD}}"
+    },
+    {
+      "type": "click",
+      "selector": "button[type=submit]"
+    },
+    {
+      "type": "wait_email_link",
+      "subject_contains": "confir",
+      "sender_contains": "",
+      "link_contains": "/verify",
+      "timeout_seconds": 180
+    }
+  ]
+}
