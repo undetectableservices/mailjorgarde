@@ -13,6 +13,8 @@ L’application s’ouvre maintenant sur **Démarrage guidé**. Suivez simplemen
 3. **Générer maintenant** : l’outil produit un username, une adresse aléatoire et un mot de passe fort.
 4. **Lancer la création** : Chromium rejoue le formulaire avec ces nouveaux identifiants.
 
+Si le service envoie un lien de confirmation, cliquez une fois sur **Ouvrir automatiquement le lien reçu par email**. Cette étape est ajoutée au profil et sera réutilisée aux prochains lancements. Les validations par code restent disponibles dans **Scénario avancé** car elles nécessitent de choisir le champ dans lequel saisir le code.
+
 Le panneau **Suivi en direct** explique ce que fait l’application. Le bouton **Pause / contrôle manuel** permet de reprendre la main dans Chromium. L’onglet **Scénario avancé** reste disponible, mais il n’est pas nécessaire pour lancer un profil déjà préparé.
 
 Chaque adresse réellement créée produit automatiquement une fiche dans **Mes comptes** avec le service, le username, l’email, le statut et le mot de passe. Le mot de passe est stocké dans le coffre Windows, jamais dans la fiche JSON. Vous pouvez afficher, copier ou supprimer cette fiche; sa suppression ne supprime pas le compte distant.

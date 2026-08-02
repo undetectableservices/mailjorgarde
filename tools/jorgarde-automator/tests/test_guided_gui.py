@@ -60,6 +60,9 @@ class GuidedGuiTests(unittest.TestCase):
             self.assertTrue(window.username_edit.text())
             self.assertTrue(window.password_edit.text())
             self.assertTrue(window.local_part_edit.text().startswith("jg-"))
+            window._add_quick_email_link_action()
+            self.assertEqual(window.current.actions[-1].type, "wait_email_link")  # type: ignore[union-attr]
+            self.assertIn("configurée", window.quick_email_link_button.text())
 
             window.pending_account_context = {
                 "workflow_id": workflow.id,

@@ -366,6 +366,11 @@ class MainWindow(QMainWindow):
         )
         copy_all = QPushButton("Tout copier")
         copy_all.clicked.connect(self._copy_current_credentials)
+        self.quick_email_link_button = QPushButton("+ Ouvrir automatiquement le lien reçu par email")
+        self.quick_email_link_button.setToolTip(
+            "Ajoute une attente de 3 minutes après l’inscription, puis ouvre le lien reçu dans JorgardeMail."
+        )
+        self.quick_email_link_button.clicked.connect(self._add_quick_email_link_action)
         credential_layout.addWidget(QLabel("Username"), 1, 0)
         credential_layout.addWidget(self.quick_username_value, 1, 1)
         credential_layout.addWidget(QLabel("Email"), 1, 2)
@@ -373,6 +378,7 @@ class MainWindow(QMainWindow):
         credential_layout.addWidget(QLabel("Mot de passe"), 2, 0)
         credential_layout.addWidget(self.quick_password_value, 2, 1, 1, 2)
         credential_layout.addWidget(reveal, 2, 3)
+        credential_layout.addWidget(self.quick_email_link_button, 3, 0, 1, 3)
         credential_layout.addWidget(copy_all, 3, 3)
         layout.addWidget(credential_card)
 
@@ -743,6 +749,46 @@ class MainWindow(QMainWindow):
         )
         self.statusBar().showMessage("Identifiants copiés", 3000)
 
+    def _add_quick_email_link_action(self) -> None:
+        if not self.current:
+            QMessageBox.information(
+                self,
+                "Service requis",
+                "Créez ou sélectionnez d’abord un service.",
+            )
+            return
+        if any(action.type in {"wait_email_link", "wait_email_code"} for action in self.current.actions):
+            self._update_quick_email_button()
+            self.statusBar().showMessage("La validation par email est déjà configurée.", 3000)
+            return
+        self.current.actions.append(self._default_action("wait_email_link"))
+        if self._save_current(show_confirmation=False):
+            self._refresh_actions(len(self.current.actions) - 1)
+            self._update_quick_email_button()
+            self.quick_progress_label.setText(
+                "Validation email ajoutée. Le prochain lancement ouvrira automatiquement le lien reçu."
+            )
+            self._log("Ouverture automatique du lien de validation ajoutée au scénario.")
+
+    def _update_quick_email_button(self) -> None:
+        if not hasattr(self, "quick_email_link_button"):
+            return
+        configured = bool(
+            self.current
+            and any(
+                action.type in {"wait_email_link", "wait_email_code"}
+                for action in self.current.actions
+            )
+        )
+        self.quick_email_link_button.setText(
+            "✓ Validation par email configurée"
+            if configured
+            else "+ Ouvrir automatiquement le lien reçu par email"
+        )
+        self.quick_email_link_button.setObjectName("success" if configured else "")
+        self.quick_email_link_button.style().unpolish(self.quick_email_link_button)
+        self.quick_email_link_button.style().polish(self.quick_email_link_button)
+
     def _refresh_accounts(self, select_id: str | None = None) -> None:
         if not hasattr(self, "account_list"):
             return
@@ -893,6 +939,7 @@ class MainWindow(QMainWindow):
             self.quick_context.setText(
                 f"Service sélectionné : {workflow.name}  ·  {len(workflow.actions)} action(s) enregistrée(s)"
             )
+            self._update_quick_email_button()
 
     def _clear_profile(self) -> None:
         self.name_edit.clear()
@@ -901,6 +948,7 @@ class MainWindow(QMainWindow):
         self.action_list.clear()
         if hasattr(self, "quick_context"):
             self.quick_context.setText("Aucun service sélectionné")
+            self._update_quick_email_button()
 
     def _new_service(self) -> None:
         name, accepted = QInputDialog.getText(self, "Nouveau service", "Nom du service :")
