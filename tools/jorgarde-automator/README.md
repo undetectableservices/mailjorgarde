@@ -4,6 +4,19 @@ Application Windows autonome pour automatiser l’inscription à vos propres ser
 
 Elle crée une adresse API, remplit le formulaire enregistré, attend le message de validation et ouvre son lien — ou saisit le code reçu. Elle ne peut pas envoyer d’e-mail et ne contourne aucun CAPTCHA, aucune MFA et aucune protection du service.
 
+## Le chemin simple
+
+L’application s’ouvre maintenant sur **Démarrage guidé**. Suivez simplement les quatre boutons affichés :
+
+1. **Configurer l’API** : collez l’URL de JorgardeMail et votre clé, puis testez la connexion.
+2. **Créer / enregistrer** : indiquez le nom et la page d’inscription de votre service. Chromium s’ouvre; remplissez le formulaire une fois puis cliquez sur **Arrêter** dans Jorgarde Automator.
+3. **Générer maintenant** : l’outil produit un username, une adresse aléatoire et un mot de passe fort.
+4. **Lancer la création** : Chromium rejoue le formulaire avec ces nouveaux identifiants.
+
+Le panneau **Suivi en direct** explique ce que fait l’application. Le bouton **Pause / contrôle manuel** permet de reprendre la main dans Chromium. L’onglet **Scénario avancé** reste disponible, mais il n’est pas nécessaire pour lancer un profil déjà préparé.
+
+Chaque adresse réellement créée produit automatiquement une fiche dans **Mes comptes** avec le service, le username, l’email, le statut et le mot de passe. Le mot de passe est stocké dans le coffre Windows, jamais dans la fiche JSON. Vous pouvez afficher, copier ou supprimer cette fiche; sa suppression ne supprime pas le compte distant.
+
 ## Installation
 
 1. Téléchargez ou copiez ce dossier sur votre ordinateur Windows.
@@ -12,7 +25,7 @@ Elle crée une adresse API, remplit le formulaire enregistré, attend le message
 
 L’installateur crée un environnement Python isolé, installe PySide6 Essentials, Playwright et un seul Chromium utilisé dans les modes visible et headless. Si Python est absent et que `winget` est disponible, il propose automatiquement Python 3.12 pour votre compte.
 
-## Première configuration
+## Configuration manuelle de l’API
 
 Dans l’onglet **JorgardeMail** :
 
@@ -23,7 +36,7 @@ Dans l’onglet **JorgardeMail** :
 
 La clé n’est jamais écrite dans le fichier de configuration. Sans mémorisation, elle reste seulement en mémoire jusqu’à la fermeture.
 
-## Enregistrer un service
+## Éditeur de scénario avancé
 
 1. Cliquez sur **Nouveau** et saisissez la page d’inscription de votre service.
 2. Vérifiez les domaines autorisés. Ajoutez les sous-domaines nécessaires avec `*.exemple.local`.
@@ -38,13 +51,13 @@ Les champs reconnus sont remplacés pendant l’enregistrement :
 
 - `{{EMAIL}}` : adresse créée par l’API ;
 - `{{USERNAME}}` : nom saisi dans l’interface avant l’exécution ;
-- `{{PASSWORD}}` : mot de passe saisi dans l’interface, jamais enregistré ;
+- `{{PASSWORD}}` : mot de passe saisi dans l’interface, jamais écrit dans le scénario ;
 - `{{START_URL}}` : page d’inscription du profil ;
 - `{{MAILBOX_ID}}` : identifiant interne de l’adresse API.
 
 Vérifiez toujours l’action enregistrée pour un champ inhabituel. Si un mot de passe apparaît en clair dans une action personnalisée, remplacez-le par `{{PASSWORD}}` avant de sauvegarder.
 
-## Lancer un scénario
+## Lancer manuellement un scénario
 
 1. sélectionnez le service ;
 2. saisissez le nom d’utilisateur et le mot de passe demandés par le scénario ;
@@ -73,7 +86,7 @@ Il n’existe aucune action JavaScript arbitraire. Les navigations principales s
 
 ## Stockage local
 
-Les profils sont enregistrés dans `%APPDATA%\JorgardeAutomator\workflows`. Ils peuvent être exportés et importés en JSON. Les mots de passe d’inscription ne sont jamais persistés. La clé API peut uniquement être persistée via le trousseau du système.
+Les profils sont enregistrés dans `%APPDATA%\JorgardeAutomator\workflows` et les fiches sans secret dans `%APPDATA%\JorgardeAutomator\accounts`. Ils peuvent être exportés et importés en JSON. Aucun mot de passe n’est écrit dans ces JSON : les mots de passe des comptes notés et, si vous le demandez, la clé API sont conservés par le coffre sécurisé du système.
 
 L’adresse créée reste disponible dans l’onglet API de JorgardeMail, sauf si **Supprimer l’adresse après succès** est activé.
 

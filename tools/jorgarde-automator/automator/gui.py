@@ -7,7 +7,7 @@ from typing import Any
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QCloseEvent, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QSplitter,
     QTabWidget,
@@ -38,6 +39,8 @@ from PySide6.QtWidgets import (
     QInputDialog,
 )
 
+from .account_store import AccountRecord, AccountStore
+from .credentials import generate_mail_local_part, generate_password, generate_username
 from .models import ALLOWED_ACTIONS, Action, Workflow, WorkflowError, normalize_host
 from .secrets import SecretStore
 from .tasks import ApiTestTask, RecordTask, RunTask
@@ -51,13 +54,31 @@ QWidget {
   font-family: "Segoe UI Variable", "Segoe UI", sans-serif;
   font-size: 13px;
 }
+QLabel { background: transparent; }
 QMainWindow { background: #070911; }
+QScrollArea { border: none; background: transparent; }
+QScrollArea > QWidget > QWidget { background: #0c0f18; }
 QFrame#header {
   background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #14152b,stop:0.55 #10172a,stop:1 #0b2030);
   border: 1px solid #242b48;
   border-radius: 18px;
 }
+QFrame#quickHero {
+  background: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #19183a,stop:0.5 #10233b,stop:1 #0b3440);
+  border: 1px solid #354477;
+  border-radius: 18px;
+}
+QFrame#credentialCard {
+  background: #0b101c;
+  border: 1px solid #2d3858;
+  border-radius: 13px;
+}
 QLabel#title { font-size: 27px; font-weight: 750; color: #ffffff; }
+QLabel#heroTitle { font-size: 22px; font-weight: 750; color: #ffffff; }
+QLabel#stepNumber {
+  min-width: 26px; max-width: 26px; min-height: 26px; max-height: 26px;
+  border-radius: 13px; background: #526cff; color: white; font-weight: 800;
+}
 QLabel#subtitle { color: #91a0ba; font-size: 12px; }
 QLabel#sectionTitle { color: #7ee5ff; font-size: 12px; font-weight: 700; }
 QGroupBox {
@@ -155,14 +176,22 @@ class MainWindow(QMainWindow):
         self.resize(1280, 820)
         self.setMinimumSize(1040, 680)
         self.store = WorkflowStore()
+        self.account_store = AccountStore()
         self.secrets = SecretStore()
         self.workflows: dict[str, Workflow] = {item.id: item for item in self.store.list()}
+        self.accounts: dict[str, AccountRecord] = {
+            item.id: item for item in self.account_store.list()
+        }
         self.current: Workflow | None = None
+        self.current_account_id: str | None = None
+        self.pending_account_id: str | None = None
+        self.pending_account_context: dict[str, str] | None = None
         self.task: ApiTestTask | RecordTask | RunTask | None = None
         self._loading = False
         self._build_ui()
         self._load_configuration()
         self._refresh_services()
+        self._refresh_accounts()
 
     def _build_ui(self) -> None:
         root = QWidget()
@@ -230,11 +259,193 @@ class MainWindow(QMainWindow):
 
     def _build_tabs(self) -> QTabWidget:
         tabs = QTabWidget()
-        tabs.addTab(self._build_automation_tab(), "Automatisation")
-        tabs.addTab(self._build_api_tab(), "JorgardeMail")
-        tabs.addTab(self._build_log_tab(), "Journal")
+        advanced_page = self._build_automation_tab()
+        api_page = self._build_api_tab()
+        accounts_page = self._build_accounts_tab()
+        log_page = self._build_log_tab()
+        tabs.addTab(self._build_quick_start_tab(), "Démarrage guidé")
+        tabs.addTab(advanced_page, "Scénario avancé")
+        tabs.addTab(api_page, "Connexion API")
+        tabs.addTab(accounts_page, "Mes comptes")
+        tabs.addTab(log_page, "Journal")
         self.tabs = tabs
         return tabs
+
+    def _build_quick_start_tab(self) -> QWidget:
+        page = QWidget()
+        outer_layout = QVBoxLayout(page)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        self.quick_scroll = scroll
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(12)
+
+        hero = QFrame(objectName="quickHero")
+        hero_layout = QVBoxLayout(hero)
+        hero_layout.setContentsMargins(20, 17, 20, 17)
+        hero_layout.addWidget(QLabel("Créer un compte sans perdre de temps", objectName="heroTitle"))
+        subtitle = QLabel(
+            "Première utilisation : connecte l’API et enregistre une fois le formulaire. "
+            "Ensuite, il suffit de générer puis lancer."
+        )
+        subtitle.setWordWrap(True)
+        subtitle.setStyleSheet("color:#aebfe2;font-size:13px")
+        hero_layout.addWidget(subtitle)
+        self.quick_context = QLabel("Aucun service sélectionné")
+        self.quick_context.setStyleSheet("color:#8fffdc;font-weight:700;padding-top:5px")
+        hero_layout.addWidget(self.quick_context)
+        layout.addWidget(hero)
+
+        steps = QGroupBox("Assistant express")
+        steps.setMinimumHeight(205)
+        grid = QGridLayout(steps)
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(10)
+        self._add_quick_step(
+            grid,
+            0,
+            "1",
+            "Connecter JorgardeMail",
+            "Colle l’URL et ta clé API, puis charge les domaines.",
+            "Configurer l’API",
+            self._open_api_tab,
+        )
+        self._add_quick_step(
+            grid,
+            1,
+            "2",
+            "Préparer le service une fois",
+            "Crée un profil puis enregistre le formulaire dans Chromium.",
+            "Créer / enregistrer",
+            self._open_service_setup,
+        )
+        self._add_quick_step(
+            grid,
+            2,
+            "3",
+            "Générer les identifiants",
+            "Username, adresse mail et mot de passe fort sont produits automatiquement.",
+            "Générer maintenant",
+            self._generate_credentials,
+        )
+        self._add_quick_step(
+            grid,
+            3,
+            "4",
+            "Lancer Chromium",
+            "Regarde le navigateur travailler; tu peux le mettre en pause à tout moment.",
+            "Lancer la création",
+            self._run_workflow,
+            primary=True,
+        )
+        layout.addWidget(steps)
+
+        credential_card = QFrame(objectName="credentialCard")
+        credential_layout = QGridLayout(credential_card)
+        credential_layout.setContentsMargins(14, 13, 14, 13)
+        credential_layout.addWidget(QLabel("IDENTIFIANTS DE CETTE CRÉATION", objectName="sectionTitle"), 0, 0, 1, 4)
+        self.quick_username_value = QLineEdit()
+        self.quick_username_value.setReadOnly(True)
+        self.quick_username_value.setPlaceholderText("Clique sur « Générer maintenant »")
+        self.quick_email_value = QLineEdit()
+        self.quick_email_value.setReadOnly(True)
+        self.quick_email_value.setPlaceholderText("L’adresse exacte apparaîtra au lancement")
+        self.quick_password_value = QLineEdit()
+        self.quick_password_value.setReadOnly(True)
+        self.quick_password_value.setEchoMode(QLineEdit.Password)
+        reveal = QPushButton("Afficher")
+        reveal.setCheckable(True)
+        reveal.toggled.connect(
+            lambda shown: (
+                self.quick_password_value.setEchoMode(QLineEdit.Normal if shown else QLineEdit.Password),
+                reveal.setText("Masquer" if shown else "Afficher"),
+            )
+        )
+        copy_all = QPushButton("Tout copier")
+        copy_all.clicked.connect(self._copy_current_credentials)
+        credential_layout.addWidget(QLabel("Username"), 1, 0)
+        credential_layout.addWidget(self.quick_username_value, 1, 1)
+        credential_layout.addWidget(QLabel("Email"), 1, 2)
+        credential_layout.addWidget(self.quick_email_value, 1, 3)
+        credential_layout.addWidget(QLabel("Mot de passe"), 2, 0)
+        credential_layout.addWidget(self.quick_password_value, 2, 1, 1, 2)
+        credential_layout.addWidget(reveal, 2, 3)
+        credential_layout.addWidget(copy_all, 3, 3)
+        layout.addWidget(credential_card)
+
+        live_group = QGroupBox("Suivi en direct")
+        live_layout = QVBoxLayout(live_group)
+        self.quick_progress_label = QLabel("En attente — commence par l’étape 1.")
+        self.quick_progress_label.setWordWrap(True)
+        self.quick_progress_label.setStyleSheet("font-size:15px;font-weight:700;color:#dce7ff")
+        self.quick_last_event = QLabel("Les messages importants apparaîtront ici.")
+        self.quick_last_event.setWordWrap(True)
+        self.quick_last_event.setStyleSheet("color:#91a0ba;padding:5px 0")
+        live_buttons = QHBoxLayout()
+        pause = QPushButton("Pause / contrôle manuel")
+        pause.setCheckable(True)
+        pause.setEnabled(False)
+        pause.toggled.connect(self._pause_run)
+        self.quick_pause_button = pause
+        stop = QPushButton("Arrêter", objectName="danger")
+        stop.setEnabled(False)
+        stop.clicked.connect(self._stop_task)
+        self.quick_stop_button = stop
+        accounts = QPushButton("Voir mes comptes")
+        accounts.clicked.connect(self._open_accounts_tab)
+        live_buttons.addWidget(pause)
+        live_buttons.addWidget(stop)
+        live_buttons.addStretch()
+        live_buttons.addWidget(accounts)
+        live_layout.addWidget(self.quick_progress_label)
+        live_layout.addWidget(self.quick_last_event)
+        live_layout.addLayout(live_buttons)
+        layout.addWidget(live_group)
+        layout.addStretch()
+        self.username_edit.textChanged.connect(self._sync_quick_credentials)
+        self.password_edit.textChanged.connect(self._sync_quick_credentials)
+        self.local_part_edit.textChanged.connect(self._sync_quick_credentials)
+        self.domain_combo.currentTextChanged.connect(self._sync_quick_credentials)
+        scroll.setWidget(content)
+        outer_layout.addWidget(scroll)
+        return page
+
+    def _add_quick_step(
+        self,
+        layout: QGridLayout,
+        row: int,
+        number: str,
+        title: str,
+        description: str,
+        button_text: str,
+        callback: Any,
+        *,
+        primary: bool = False,
+    ) -> None:
+        badge = QLabel(number, objectName="stepNumber")
+        badge.setAlignment(Qt.AlignCenter)
+        text_column = QVBoxLayout()
+        title_label = QLabel(title)
+        title_label.setStyleSheet("font-weight:750;color:#f4f7ff")
+        description_label = QLabel(description)
+        description_label.setStyleSheet("color:#8f9db5;font-size:12px")
+        description_label.setWordWrap(True)
+        text_column.addWidget(title_label)
+        text_column.addWidget(description_label)
+        button = QPushButton(button_text, objectName="primary" if primary else "")
+        button.setMinimumWidth(165)
+        button.setMinimumHeight(34)
+        button.clicked.connect(callback)
+        if number == "3":
+            self.quick_generate_button = button
+        elif number == "4":
+            self.quick_run_button = button
+        layout.addWidget(badge, row, 0, Qt.AlignTop)
+        layout.addLayout(text_column, row, 1)
+        layout.addWidget(button, row, 2)
 
     def _build_automation_tab(self) -> QWidget:
         page = QWidget()
@@ -260,7 +471,7 @@ class MainWindow(QMainWindow):
         self.username_edit.setPlaceholderText("Utilisé pour {{USERNAME}}")
         self.password_edit = QLineEdit()
         self.password_edit.setEchoMode(QLineEdit.Password)
-        self.password_edit.setPlaceholderText("Jamais enregistré")
+        self.password_edit.setPlaceholderText("Jamais écrit dans le profil")
         self.local_part_edit = QLineEdit()
         self.local_part_edit.setPlaceholderText("vide = adresse aléatoire")
         self.domain_combo = QComboBox()
@@ -396,6 +607,67 @@ class MainWindow(QMainWindow):
         layout.addStretch()
         return page
 
+    def _build_accounts_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(16, 16, 16, 16)
+        title = QLabel("IDENTIFIANTS CRÉÉS", objectName="sectionTitle")
+        explanation = QLabel(
+            "Chaque création est notée automatiquement. Les informations visibles sont locales; "
+            "les mots de passe sont conservés séparément dans le coffre Windows."
+        )
+        explanation.setWordWrap(True)
+        explanation.setStyleSheet("color:#91a0ba")
+        layout.addWidget(title)
+        layout.addWidget(explanation)
+
+        splitter = QSplitter(Qt.Horizontal)
+        self.account_list = QListWidget()
+        self.account_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.account_list.currentItemChanged.connect(self._account_selected)
+        splitter.addWidget(self.account_list)
+
+        detail = QFrame(objectName="credentialCard")
+        form = QFormLayout(detail)
+        form.setContentsMargins(18, 18, 18, 18)
+        self.account_service_value = QLineEdit()
+        self.account_username_value = QLineEdit()
+        self.account_email_value = QLineEdit()
+        self.account_password_value = QLineEdit()
+        self.account_password_value.setEchoMode(QLineEdit.Password)
+        for field in (
+            self.account_service_value,
+            self.account_username_value,
+            self.account_email_value,
+            self.account_password_value,
+        ):
+            field.setReadOnly(True)
+        self.account_status_value = QLabel("—")
+        self.account_status_value.setStyleSheet("font-weight:750;color:#aebfe2")
+        reveal = QPushButton("Afficher / masquer")
+        reveal.setCheckable(True)
+        reveal.toggled.connect(
+            lambda shown: self.account_password_value.setEchoMode(
+                QLineEdit.Normal if shown else QLineEdit.Password
+            )
+        )
+        copy = QPushButton("Copier la fiche", objectName="primary")
+        copy.clicked.connect(self._copy_selected_account)
+        delete = QPushButton("Supprimer la fiche", objectName="danger")
+        delete.clicked.connect(self._delete_selected_account)
+        form.addRow("Service", self.account_service_value)
+        form.addRow("Username", self.account_username_value)
+        form.addRow("Email", self.account_email_value)
+        form.addRow("Mot de passe", self.account_password_value)
+        form.addRow("", reveal)
+        form.addRow("Statut", self.account_status_value)
+        form.addRow("", copy)
+        form.addRow("", delete)
+        splitter.addWidget(detail)
+        splitter.setSizes([390, 560])
+        layout.addWidget(splitter, 1)
+        return page
+
     def _build_log_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -408,6 +680,157 @@ class MainWindow(QMainWindow):
         clear_button.clicked.connect(self.log_view.clear)
         layout.addWidget(clear_button, 0, Qt.AlignRight)
         return page
+
+    def _open_api_tab(self) -> None:
+        self.tabs.setCurrentIndex(2)
+        self.api_url_edit.setFocus()
+
+    def _open_accounts_tab(self) -> None:
+        self._refresh_accounts(self.current_account_id)
+        self.tabs.setCurrentIndex(3)
+
+    def _open_service_setup(self) -> None:
+        if not self.current:
+            self._new_service()
+        if not self.current or self.task:
+            return
+        QMessageBox.information(
+            self,
+            "Enregistrement du formulaire",
+            "Chromium va s’ouvrir. Remplissez le formulaire une seule fois comme vous le feriez "
+            "normalement. Quand vous avez terminé, revenez ici et cliquez sur Arrêter.\n\n"
+            "L’email, le username et le mot de passe seront remplacés automatiquement par des "
+            "valeurs variables pour les prochaines exécutions.",
+        )
+        self.tabs.setCurrentIndex(0)
+        self._start_recording()
+
+    def _generate_credentials(self) -> None:
+        self.username_edit.setText(generate_username())
+        self.password_edit.setText(generate_password())
+        self.local_part_edit.setText(generate_mail_local_part())
+        if not self.domain_combo.currentText().strip() and self.domain_combo.count() > 1:
+            self.domain_combo.setCurrentIndex(1)
+        self._sync_quick_credentials()
+        self.quick_progress_label.setText(
+            "Identifiants prêts. Vérifie le service sélectionné puis clique sur « Lancer la création »."
+        )
+        self._log("Nouveaux identifiants aléatoires générés.")
+
+    def _sync_quick_credentials(self) -> None:
+        if not hasattr(self, "quick_username_value"):
+            return
+        username = self.username_edit.text()
+        local_part = self.local_part_edit.text().strip()
+        domain = self.domain_combo.currentText().strip()
+        email = f"{local_part}@{domain}" if local_part and domain else local_part
+        self.quick_username_value.setText(username)
+        self.quick_password_value.setText(self.password_edit.text())
+        if not self.pending_account_id:
+            self.quick_email_value.setText(email)
+
+    def _copy_current_credentials(self) -> None:
+        username = self.quick_username_value.text().strip()
+        email = self.quick_email_value.text().strip()
+        password = self.quick_password_value.text()
+        if not username and not email and not password:
+            self._generate_credentials()
+            username = self.quick_username_value.text().strip()
+            email = self.quick_email_value.text().strip()
+            password = self.quick_password_value.text()
+        QApplication.clipboard().setText(
+            f"Username: {username}\nEmail: {email}\nMot de passe: {password}"
+        )
+        self.statusBar().showMessage("Identifiants copiés", 3000)
+
+    def _refresh_accounts(self, select_id: str | None = None) -> None:
+        if not hasattr(self, "account_list"):
+            return
+        self.accounts = {item.id: item for item in self.account_store.list()}
+        self.account_list.clear()
+        target = -1
+        status_icons = {"en_cours": "●", "reussi": "✓", "a_verifier": "!"}
+        for row, record in enumerate(self.accounts.values()):
+            item = QListWidgetItem(
+                f"{status_icons.get(record.status, '•')}  {record.service_name}\n    {record.email}"
+            )
+            item.setData(Qt.UserRole, record.id)
+            self.account_list.addItem(item)
+            if record.id == select_id:
+                target = row
+        if target >= 0:
+            self.account_list.setCurrentRow(target)
+        elif self.account_list.count():
+            self.account_list.setCurrentRow(0)
+        else:
+            self.current_account_id = None
+            self._clear_account_detail()
+
+    def _account_selected(
+        self, current: QListWidgetItem | None, _previous: QListWidgetItem | None
+    ) -> None:
+        if not current:
+            self.current_account_id = None
+            self._clear_account_detail()
+            return
+        record = self.accounts.get(str(current.data(Qt.UserRole)))
+        if not record:
+            return
+        self.current_account_id = record.id
+        self.account_service_value.setText(record.service_name)
+        self.account_username_value.setText(record.username)
+        self.account_email_value.setText(record.email)
+        password = self.secrets.get_account_password(record.id) if record.password_saved else ""
+        self.account_password_value.setText(password)
+        labels = {
+            "en_cours": "Création en cours",
+            "reussi": "Compte créé avec succès",
+            "a_verifier": "À vérifier manuellement",
+        }
+        suffix = "" if password else " — mot de passe non disponible dans le coffre"
+        self.account_status_value.setText(labels.get(record.status, record.status) + suffix)
+
+    def _clear_account_detail(self) -> None:
+        if not hasattr(self, "account_service_value"):
+            return
+        self.account_service_value.clear()
+        self.account_username_value.clear()
+        self.account_email_value.clear()
+        self.account_password_value.clear()
+        self.account_status_value.setText("—")
+
+    def _copy_selected_account(self) -> None:
+        if not self.current_account_id:
+            return
+        record = self.accounts.get(self.current_account_id)
+        if not record:
+            return
+        password = self.secrets.get_account_password(record.id) if record.password_saved else ""
+        QApplication.clipboard().setText(
+            f"Service: {record.service_name}\nUsername: {record.username}\n"
+            f"Email: {record.email}\nMot de passe: {password}"
+        )
+        self.statusBar().showMessage("Fiche copiée", 3000)
+
+    def _delete_selected_account(self) -> None:
+        if not self.current_account_id:
+            return
+        record = self.accounts.get(self.current_account_id)
+        if not record:
+            return
+        if (
+            QMessageBox.question(
+                self,
+                "Supprimer la fiche",
+                f"Supprimer la fiche locale pour {record.email} ?\nLe compte distant ne sera pas supprimé.",
+            )
+            != QMessageBox.Yes
+        ):
+            return
+        self.account_store.delete(record.id)
+        self.secrets.delete_account_password(record.id)
+        self.current_account_id = None
+        self._refresh_accounts()
 
     def _load_configuration(self) -> None:
         config = self.store.load_config()
@@ -466,12 +889,18 @@ class MainWindow(QMainWindow):
         self.hosts_edit.setText(", ".join(workflow.allowed_hosts))
         self.delete_mailbox_check.setChecked(workflow.delete_mailbox_after_success)
         self._refresh_actions()
+        if hasattr(self, "quick_context"):
+            self.quick_context.setText(
+                f"Service sélectionné : {workflow.name}  ·  {len(workflow.actions)} action(s) enregistrée(s)"
+            )
 
     def _clear_profile(self) -> None:
         self.name_edit.clear()
         self.start_url_edit.clear()
         self.hosts_edit.clear()
         self.action_list.clear()
+        if hasattr(self, "quick_context"):
+            self.quick_context.setText("Aucun service sélectionné")
 
     def _new_service(self) -> None:
         name, accepted = QInputDialog.getText(self, "Nouveau service", "Nom du service :")
@@ -730,19 +1159,38 @@ class MainWindow(QMainWindow):
         self.domain_combo.addItems(names)
         if current:
             self.domain_combo.setCurrentText(current)
+        elif names:
+            self.domain_combo.setCurrentIndex(1)
         self.api_status.setText(f"Connectée — {len(names)} domaine(s) disponible(s)")
         self.api_status.setStyleSheet("color:#8fffdc;font-weight:700")
+        self.quick_progress_label.setText(
+            "API connectée. Sélectionne ou crée maintenant le service à automatiser."
+        )
+        self._sync_quick_credentials()
         self._log("API opérationnelle. Domaines : " + (", ".join(names) or "aucun"))
 
     def _run_workflow(self) -> None:
         if self.task or not self._save_current(show_confirmation=False) or not self.current:
+            if not self.current:
+                QMessageBox.information(
+                    self,
+                    "Service requis",
+                    "Créez d’abord un service avec l’étape 2 du guide.",
+                )
             return
         api_url = self.api_url_edit.text().strip()
         api_key = self.api_key_edit.text().strip()
         if not api_url or not api_key:
             QMessageBox.warning(self, "API requise", "Saisissez l’URL et la clé API JorgardeMail.")
-            self.tabs.setCurrentIndex(1)
+            self.tabs.setCurrentIndex(2)
             return
+        if not self.username_edit.text().strip():
+            self.username_edit.setText(generate_username())
+        if not self.password_edit.text():
+            self.password_edit.setText(generate_password())
+        if not self.local_part_edit.text().strip():
+            self.local_part_edit.setText(generate_mail_local_part())
+        self._sync_quick_credentials()
         serialized = json.dumps(self.current.to_dict(), ensure_ascii=False)
         if "{{USERNAME}}" in serialized and not self.username_edit.text():
             QMessageBox.warning(self, "Nom requis", "Ce scénario utilise {{USERNAME}}.")
@@ -750,7 +1198,21 @@ class MainWindow(QMainWindow):
         if "{{PASSWORD}}" in serialized and not self.password_edit.text():
             QMessageBox.warning(self, "Mot de passe requis", "Ce scénario utilise {{PASSWORD}}.")
             return
+        if not self.current.actions:
+            QMessageBox.warning(
+                self,
+                "Scénario vide",
+                "Ce service n’a encore aucune action. Utilisez l’étape 2 pour enregistrer son formulaire.",
+            )
+            return
         self._save_configuration()
+        self.pending_account_id = None
+        self.pending_account_context = {
+            "workflow_id": self.current.id,
+            "service_name": self.current.name,
+            "username": self.username_edit.text().strip(),
+            "password": self.password_edit.text(),
+        }
         task = RunTask(
             deepcopy(self.current),
             base_url=api_url,
@@ -773,18 +1235,63 @@ class MainWindow(QMainWindow):
         self._set_busy("EXÉCUTION")
         self.pause_button.setEnabled(True)
         self.stop_button.setEnabled(True)
-        self.tabs.setCurrentIndex(2)
+        self.tabs.setCurrentIndex(0)
         task.start()
 
     def _mailbox_created(self, result: object) -> None:
         if isinstance(result, dict):
-            self.mailbox_display.setText(str(result.get("address", "")))
+            address = str(result.get("address", ""))
+            mailbox_id = str(result.get("id", ""))
+            self.mailbox_display.setText(address)
+            self.quick_email_value.setText(address)
+            context = self.pending_account_context
+            if context and address:
+                try:
+                    record = AccountRecord.new(
+                        workflow_id=context["workflow_id"],
+                        service_name=context["service_name"],
+                        username=context["username"],
+                        email=address,
+                        mailbox_id=mailbox_id,
+                    )
+                    password_saved = False
+                    try:
+                        self.secrets.set_account_password(record.id, context["password"])
+                        password_saved = True
+                    except Exception as exc:
+                        self._log(f"Coffre Windows indisponible : {exc}")
+                    record.password_saved = password_saved
+                    self.account_store.save(record)
+                    self.accounts[record.id] = record
+                    self.pending_account_id = record.id
+                    self.current_account_id = record.id
+                    self._refresh_accounts(record.id)
+                    self.quick_progress_label.setText(
+                        "Adresse créée. Chromium remplit maintenant le formulaire du service."
+                    )
+                except Exception as exc:
+                    self._log(f"Impossible de noter la fiche du compte : {exc}")
 
     def _run_succeeded(self, result: object) -> None:
         if isinstance(result, dict):
             address = str(result.get("address", ""))
             suffix = " (supprimée)" if result.get("mailbox_deleted") else ""
             self._log(f"TERMINÉ — {address}{suffix}")
+        if self.pending_account_id:
+            record = self.accounts.get(self.pending_account_id)
+            if record:
+                try:
+                    updated = self.account_store.update(record, status="reussi")
+                    self.accounts[updated.id] = updated
+                    self.current_account_id = updated.id
+                    self._refresh_accounts(updated.id)
+                except Exception as exc:
+                    self._log(f"Impossible de mettre à jour la fiche du compte : {exc}")
+        self.pending_account_id = None
+        self.pending_account_context = None
+        self.quick_progress_label.setText(
+            "Compte créé avec succès. La fiche complète est disponible dans « Mes comptes »."
+        )
         self.runtime_badge.setText("SUCCÈS")
         self.runtime_badge.setStyleSheet(
             "background:#153b35;color:#9fffe4;border:1px solid #287464;border-radius:10px;padding:7px 12px;font-weight:700"
@@ -794,6 +1301,13 @@ class MainWindow(QMainWindow):
         if isinstance(self.task, RunTask):
             self.task.pause(paused)
             self.pause_button.setText("Reprendre" if paused else "Pause / prise en main")
+            self.quick_pause_button.blockSignals(True)
+            self.quick_pause_button.setChecked(paused)
+            self.quick_pause_button.setText("Reprendre l’automatisation" if paused else "Pause / contrôle manuel")
+            self.quick_pause_button.blockSignals(False)
+            self.pause_button.blockSignals(True)
+            self.pause_button.setChecked(paused)
+            self.pause_button.blockSignals(False)
             self._log("Exécution en pause — vous contrôlez Chromium." if paused else "Exécution reprise.")
 
     def _stop_task(self) -> None:
@@ -802,7 +1316,25 @@ class MainWindow(QMainWindow):
             self.task.stop()
 
     def _task_failed(self, message: str) -> None:
+        had_account = bool(self.pending_account_id)
+        if self.pending_account_id:
+            record = self.accounts.get(self.pending_account_id)
+            if record:
+                try:
+                    updated = self.account_store.update(record, status="a_verifier")
+                    self.accounts[updated.id] = updated
+                    self.current_account_id = updated.id
+                    self._refresh_accounts(updated.id)
+                except Exception as exc:
+                    self._log(f"Impossible de mettre à jour la fiche du compte : {exc}")
+        self.pending_account_id = None
+        self.pending_account_context = None
         self._log(f"ERREUR — {message}")
+        self.quick_progress_label.setText(
+            "L’automatisation s’est arrêtée. La fiche est conservée dans « Mes comptes » pour vérification."
+            if had_account
+            else "L’opération a échoué. Lis le message ci-dessous puis corrige la configuration indiquée."
+        )
         self.runtime_badge.setText("ERREUR")
         self.runtime_badge.setStyleSheet(
             "background:#3a1720;color:#ffb7c1;border:1px solid #713040;border-radius:10px;padding:7px 12px;font-weight:700"
@@ -815,7 +1347,16 @@ class MainWindow(QMainWindow):
         if self.task is finished_task:
             self.task = None
         if was_recording and self.current and self._save_current(show_confirmation=False):
-            self._log("Scénario enregistré automatiquement.")
+            failed = self.runtime_badge.text() == "ERREUR"
+            self._log(
+                "Actions partielles enregistrées automatiquement."
+                if failed
+                else "Scénario enregistré automatiquement."
+            )
+            if not failed:
+                self.quick_progress_label.setText(
+                    "Formulaire enregistré. Clique sur « Générer maintenant », puis lance la création."
+                )
         self._set_busy(None)
 
     def _set_busy(self, label: str | None) -> None:
@@ -825,11 +1366,41 @@ class MainWindow(QMainWindow):
         self.save_button.setEnabled(not busy)
         self.stop_button.setEnabled(isinstance(self.task, RunTask))
         self.stop_record_button.setEnabled(isinstance(self.task, RecordTask))
+        self.quick_run_button.setEnabled(not busy)
+        self.quick_generate_button.setEnabled(not busy)
+        self.quick_stop_button.setEnabled(isinstance(self.task, (RunTask, RecordTask)))
+        self.quick_pause_button.setEnabled(isinstance(self.task, RunTask))
+        self.service_list.setEnabled(not busy)
+        for field in (
+            self.username_edit,
+            self.password_edit,
+            self.local_part_edit,
+            self.domain_combo,
+        ):
+            field.setEnabled(not busy)
         if not isinstance(self.task, RunTask):
             self.pause_button.setChecked(False)
             self.pause_button.setEnabled(False)
             self.pause_button.setText("Pause / prise en main")
+            self.quick_pause_button.blockSignals(True)
+            self.quick_pause_button.setChecked(False)
+            self.quick_pause_button.setText("Pause / contrôle manuel")
+            self.quick_pause_button.blockSignals(False)
         if busy:
+            if isinstance(self.task, RunTask):
+                progress = "Création active dans Chromium… utilise Pause si tu dois intervenir."
+            elif isinstance(self.task, RecordTask):
+                progress = "Enregistrement actif… remplis le formulaire dans Chromium puis clique sur Arrêter."
+            else:
+                progress = "Connexion à JorgardeMail et chargement des domaines…"
+            self.quick_progress_label.setText(progress)
+            if isinstance(self.task, (RunTask, RecordTask)):
+                QTimer.singleShot(
+                    0,
+                    lambda: self.quick_scroll.verticalScrollBar().setValue(
+                        self.quick_scroll.verticalScrollBar().maximum()
+                    ),
+                )
             self.runtime_badge.setText(label or "ACTIF")
             self.runtime_badge.setStyleSheet(
                 "background:#252858;color:#cbd4ff;border:1px solid #5262bd;border-radius:10px;padding:7px 12px;font-weight:700"
@@ -847,6 +1418,8 @@ class MainWindow(QMainWindow):
 
     def _log(self, message: str) -> None:
         self.log_view.appendPlainText(message)
+        if hasattr(self, "quick_last_event"):
+            self.quick_last_event.setText(message)
         self.statusBar().showMessage(message, 5000)
 
     def closeEvent(self, event: QCloseEvent) -> None:

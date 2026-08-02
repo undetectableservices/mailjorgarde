@@ -6,4 +6,4 @@ dist/
 release/
 *.spec
 .pytest_cache/
-.gui-smoke-data/
+.gui-smoke-data*/
